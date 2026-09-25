@@ -33,7 +33,7 @@ Goal: the S3 surface everyday tools touch.
 - [ ] Object metadata, content headers, response-header overrides, checksums returned with ChecksumMode
 - [x] Versioning: version IDs, delete markers, ListObjectVersions
 - [ ] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
-- [ ] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
+- [x] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
 - [ ] Blob garbage collection (refcounts + sweeper)
 Conformance: `smoke-s3`, `s3`.
 Exit: all `smoke-s3` steps pass; `s3` ≥ 300 passing (about 60% of the selection).
