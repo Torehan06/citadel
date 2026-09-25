@@ -126,6 +126,8 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.getBucketLocation(req)
 	case sub == "versioning" && m == http.MethodGet:
 		return h.getBucketVersioning(req)
+	case sub == "versioning" && m == http.MethodPut:
+		return h.putBucketVersioning(req)
 	case sub == "delete" && m == http.MethodPost:
 		return h.deleteObjects(req)
 	case sub == "uploads" && m == http.MethodGet:

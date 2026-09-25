@@ -78,6 +78,8 @@ func (h *Handler) createBucket(req *request) error {
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		var owner string
 		switch err := tx.QueryRowContext(req.ctx, `SELECT account_id FROM s3_buckets WHERE name = ?`, req.bucket).Scan(&owner); {
+		case err == nil && owner == req.who.Account.ID && legacyUSEast1(req, cfg.LocationConstraint):
+			return nil // idempotent: the bucket already exists as asked
 		case err == nil && owner == req.who.Account.ID:
 			return &Error{Status: 409, Code: "BucketAlreadyOwnedByYou",
 				Message: "Your previous request to create the named bucket succeeded and you already own it.", Bucket: req.bucket}
@@ -255,4 +257,13 @@ func (h *Handler) getBucketVersioning(req *request) error {
 	}
 	writeXML(req.w, http.StatusOK, versioningConfiguration{Status: b.Versioning})
 	return nil
+}
+
+// legacyUSEast1 reports whether a CreateBucket for a bucket the caller
+// already owns gets us-east-1's legacy answer: 200 OK instead of 409
+// BucketAlreadyOwnedByYou. S3 does that only for requests addressed to
+// us-east-1 without a location constraint (or with "us-east-1").
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateBucket.html
+func legacyUSEast1(req *request, constraint string) bool {
+	return req.auth.Region == "us-east-1" && (constraint == "" || constraint == "us-east-1")
 }

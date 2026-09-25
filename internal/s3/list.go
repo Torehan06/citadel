@@ -341,79 +341,6 @@ func (h *Handler) listObjectsV2(req *request) error {
 	return nil
 }
 
-type listVersionsResult struct {
-	XMLName             xml.Name       `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListVersionsResult"`
-	Name                string         `xml:"Name"`
-	Prefix              string         `xml:"Prefix"`
-	KeyMarker           string         `xml:"KeyMarker"`
-	VersionIDMarker     string         `xml:"VersionIdMarker"`
-	NextKeyMarker       string         `xml:"NextKeyMarker,omitempty"`
-	NextVersionIDMarker string         `xml:"NextVersionIdMarker,omitempty"`
-	MaxKeys             int            `xml:"MaxKeys"`
-	Delimiter           string         `xml:"Delimiter,omitempty"`
-	IsTruncated         bool           `xml:"IsTruncated"`
-	Versions            []versionEntry `xml:"Version"`
-	CommonPrefixes      []commonPrefix `xml:"CommonPrefixes"`
-	EncodingType        string         `xml:"EncodingType,omitempty"`
-}
-
-type versionEntry struct {
-	Key          string `xml:"Key"`
-	VersionID    string `xml:"VersionId"`
-	IsLatest     bool   `xml:"IsLatest"`
-	LastModified string `xml:"LastModified"`
-	ETag         string `xml:"ETag"`
-	Size         int64  `xml:"Size"`
-	StorageClass string `xml:"StorageClass"`
-	Owner        *owner `xml:"Owner"`
-}
-
-// listObjectVersions lists versions. Until versioning lands (M2) every
-// object has exactly one version, "null", which is the latest.
-func (h *Handler) listObjectVersions(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
-		return err
-	}
-	q := req.r.URL.Query()
-	p, err := parseListParams(q)
-	if err != nil {
-		return err
-	}
-	keyMarker, vidMarker := q.Get("key-marker"), q.Get("version-id-marker")
-	if vidMarker != "" && keyMarker == "" {
-		return errInvalidArgument("A version-id marker cannot be specified without a key marker.")
-	}
-	page, err := h.scan(req.ctx, req.bucket, p.prefix, p.delimiter, keyMarker, p.maxKeys)
-	if err != nil {
-		return err
-	}
-	res := listVersionsResult{
-		Name: req.bucket, Prefix: p.enc(p.prefix), KeyMarker: p.enc(keyMarker), VersionIDMarker: vidMarker,
-		MaxKeys: p.maxKeys, Delimiter: p.enc(p.delimiter), IsTruncated: page.Truncated,
-	}
-	if p.urlEncode {
-		res.EncodingType = "url"
-	}
-	if page.Truncated {
-		res.NextKeyMarker = p.enc(page.Next)
-		if len(page.Objects) > 0 && page.Objects[len(page.Objects)-1].Key == page.Next {
-			res.NextVersionIDMarker = nullVersion
-		}
-	}
-	ow := &owners{h: h, ctx: req.ctx}
-	for _, o := range page.Objects {
-		res.Versions = append(res.Versions, versionEntry{
-			Key: p.enc(o.Key), VersionID: o.VersionID, IsLatest: true, LastModified: isoTime(o.LastModified),
-			ETag: o.ETag, Size: o.Size, StorageClass: storageClass(o), Owner: ow.get(o.Owner),
-		})
-	}
-	for _, c := range page.Prefixes {
-		res.CommonPrefixes = append(res.CommonPrefixes, commonPrefix{Prefix: p.enc(c)})
-	}
-	writeXML(req.w, http.StatusOK, res)
-	return nil
-}
-
 // ---- DeleteObjects ----------------------------------------------------------
 
 type deleteRequest struct {
@@ -432,8 +359,10 @@ type deleteResult struct {
 }
 
 type deletedEntry struct {
-	Key       string `xml:"Key"`
-	VersionID string `xml:"VersionId,omitempty"`
+	Key                   string `xml:"Key"`
+	VersionID             string `xml:"VersionId,omitempty"`
+	DeleteMarker          bool   `xml:"DeleteMarker,omitempty"`
+	DeleteMarkerVersionID string `xml:"DeleteMarkerVersionId,omitempty"`
 }
 
 type deleteErrItem struct {
@@ -460,16 +389,21 @@ func (h *Handler) deleteObjects(req *request) error {
 	res := deleteResult{}
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		for _, o := range d.Objects {
-			if o.VersionID != "" && o.VersionID != nullVersion {
+			if o.VersionID != "" && !validVersionID(o.VersionID) {
 				res.Errors = append(res.Errors, deleteErrItem{Key: o.Key, VersionID: o.VersionID,
 					Code: "NoSuchVersion", Message: "The specified version does not exist."})
 				continue
 			}
-			if err := deleteNullVersion(req, tx, o.Key); err != nil {
+			out, err := deleteObjectTx(req, tx, o.Key, o.VersionID)
+			if err != nil {
 				return err
 			}
 			if !d.Quiet {
-				res.Deleted = append(res.Deleted, deletedEntry{Key: o.Key, VersionID: o.VersionID})
+				e := deletedEntry{Key: o.Key, VersionID: o.VersionID, DeleteMarker: out.DeleteMarker}
+				if out.DeleteMarker {
+					e.DeleteMarkerVersionID = out.VersionID
+				}
+				res.Deleted = append(res.Deleted, e)
 			}
 		}
 		return nil

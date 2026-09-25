@@ -55,28 +55,43 @@ type objectRow struct {
 	Meta         objectMeta
 }
 
+// loadObject returns the current version of req.key, or the given version.
+// A delete marker answers like S3: 404 NoSuchKey when it is the current
+// version, 405 MethodNotAllowed when addressed by version ID, both with
+// x-amz-delete-marker set.
 func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error) {
-	q := `SELECT key, version_id, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
-		WHERE bucket = ? AND key = ? AND is_latest = 1 AND delete_marker = 0`
+	q := `SELECT key, version_id, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
+		WHERE bucket = ? AND key = ? AND is_latest = 1`
 	args := []any{req.bucket, req.key}
 	if versionID != "" {
-		q = `SELECT key, version_id, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
-			WHERE bucket = ? AND key = ? AND version_id = ? AND delete_marker = 0`
+		q = `SELECT key, version_id, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
+			WHERE bucket = ? AND key = ? AND version_id = ?`
 		args = append(args, versionID)
 	}
 	var o objectRow
 	var lm int64
+	var marker int
 	var meta, parts string
 	err := h.st.DB().QueryRowContext(req.ctx, q, args...).
-		Scan(&o.Key, &o.VersionID, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta)
+		Scan(&o.Key, &o.VersionID, &marker, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta)
 	if errors.Is(err, sql.ErrNoRows) {
 		if versionID != "" {
-			return nil, &Error{Status: 404, Code: "NoSuchVersion", Message: "The specified version does not exist.", Bucket: req.bucket, Key: req.key}
+			return nil, errNoSuchVersion(req.bucket, req.key)
 		}
 		return nil, errNoSuchKey(req.bucket, req.key)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if marker == 1 {
+		hdr := http.Header{"X-Amz-Delete-Marker": {"true"}, "X-Amz-Version-Id": {o.VersionID}}
+		if versionID != "" {
+			return nil, &Error{Status: 405, Code: "MethodNotAllowed", Message: "The specified method is not allowed against this resource.",
+				Bucket: req.bucket, Key: req.key, Header: hdr}
+		}
+		e := errNoSuchKey(req.bucket, req.key)
+		e.Header = hdr
+		return nil, e
 	}
 	o.LastModified = msTime(lm)
 	if err := json.Unmarshal([]byte(meta), &o.Meta); err != nil {
@@ -88,23 +103,6 @@ func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error)
 		}
 	}
 	return &o, nil
-}
-
-// versionParam validates ?versionId. Buckets that were never versioned only
-// have the "null" version.
-func versionParam(req *request) (string, error) {
-	q := req.r.URL.Query()
-	if _, ok := q["versionId"]; !ok {
-		return "", nil
-	}
-	v := q.Get("versionId")
-	if v == "" {
-		return "", errInvalidArgument("Version id cannot be the empty string")
-	}
-	if v != nullVersion {
-		return "", errInvalidArgument("Invalid version id specified")
-	}
-	return v, nil
 }
 
 // ingested is a request body that has been streamed to a pending blob and
@@ -195,7 +193,8 @@ func (h *Handler) ingest(req *request, defaultAlgo string) (*ingested, error) {
 }
 
 func (h *Handler) putObject(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.ownedBucket(req)
+	if err != nil {
 		return err
 	}
 	if len(req.key) > maxKeyLength {
@@ -215,10 +214,14 @@ func (h *Handler) putObject(req *request) error {
 		return err
 	}
 	etag := `"` + hex.EncodeToString(in.pending.MD5) + `"`
-	if err := h.writeObject(req, objectRow{
+	vid, err := h.writeObject(req, objectRow{
 		Key: req.key, Size: in.pending.Size, ETag: etag, Blob: in.pending.SHA256, Meta: meta,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
+	}
+	if b.Versioning == versioningEnabled {
+		req.w.Header().Set("x-amz-version-id", vid)
 	}
 	req.w.Header().Set("ETag", etag)
 	if in.echo {
@@ -227,43 +230,6 @@ func (h *Handler) putObject(req *request) error {
 	}
 	req.w.WriteHeader(http.StatusOK)
 	return nil
-}
-
-// writeObject records o as the current ("null") version of its key. The
-// caller has already committed the blob(s) it points to.
-func (h *Handler) writeObject(req *request, o objectRow) error {
-	return h.st.Update(req.ctx, func(tx *store.Tx) error { return writeObjectTx(req, tx, o) })
-}
-
-func writeObjectTx(req *request, tx *store.Tx, o objectRow) error {
-	metaJSON, _ := json.Marshal(o.Meta)
-	partsJSON := ""
-	if len(o.Parts) > 0 {
-		b, _ := json.Marshal(o.Parts)
-		partsJSON = string(b)
-	}
-	// The bucket may have been deleted while the body streamed in.
-	var one int
-	if err := tx.QueryRowContext(req.ctx, `SELECT 1 FROM s3_buckets WHERE name = ?`, req.bucket).Scan(&one); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return errNoSuchBucket(req.bucket)
-		}
-		return err
-	}
-	if _, err := tx.ExecContext(req.ctx, `
-		INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json, hlc)
-		VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(bucket, key, version_id) DO UPDATE SET
-			seq=excluded.seq, is_latest=1, delete_marker=0, size=excluded.size, etag=excluded.etag, blob=excluded.blob,
-			parts_json=excluded.parts_json, last_modified=excluded.last_modified, owner=excluded.owner,
-			meta_json=excluded.meta_json, hlc=excluded.hlc`,
-		req.bucket, o.Key, nullVersion, int64(tx.HLC()), o.Size, o.ETag, o.Blob, partsJSON,
-		tx.HLC().WallMs(), req.who.Account.ID, string(metaJSON), int64(tx.HLC())); err != nil {
-		return err
-	}
-	return tx.Change("s3", "PutObject", req.bucket+"/"+o.Key, map[string]any{
-		"version": nullVersion, "blob": o.Blob, "parts": len(o.Parts), "size": o.Size, "etag": o.ETag,
-	})
 }
 
 // metaFromRequest collects the headers S3 stores with an object.
@@ -359,40 +325,6 @@ func bodyError(err error) error {
 	return errf(400, "IncompleteBody", "The request body terminated unexpectedly")
 }
 
-func (h *Handler) deleteObject(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
-		return err
-	}
-	vid, err := versionParam(req)
-	if err != nil {
-		return err
-	}
-	if err := h.st.Update(req.ctx, func(tx *store.Tx) error {
-		return deleteNullVersion(req, tx, req.key)
-	}); err != nil {
-		return err
-	}
-	if vid != "" {
-		req.w.Header().Set("x-amz-version-id", vid)
-	}
-	req.w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-// deleteNullVersion removes the "null" version of key. Deleting a key that
-// doesn't exist succeeds, as in S3.
-func deleteNullVersion(req *request, tx *store.Tx, key string) error {
-	res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_objects WHERE bucket = ? AND key = ? AND version_id = ?`,
-		req.bucket, key, nullVersion)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil
-	}
-	return tx.Change("s3", "DeleteObject", req.bucket+"/"+key, map[string]string{"version": nullVersion})
-}
-
 // ---- GET / HEAD ----------------------------------------------------------
 
 // responseOverrides are the query parameters that override response headers
@@ -407,7 +339,8 @@ var responseOverrides = map[string]string{
 }
 
 func (h *Handler) getObject(req *request, head bool) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.ownedBucket(req)
+	if err != nil {
 		return err
 	}
 	vid, err := versionParam(req)
@@ -460,7 +393,7 @@ func (h *Handler) getObject(req *request, head bool) error {
 			hdr.Set(header, strings.Join(v, ","))
 		}
 	}
-	if vid != "" {
+	if vid != "" || b.Versioning != "" {
 		hdr.Set("x-amz-version-id", o.VersionID)
 	}
 	if strings.EqualFold(r.Header.Get("X-Amz-Checksum-Mode"), "ENABLED") && !partial && o.Meta.ChecksumAlgo != "" {

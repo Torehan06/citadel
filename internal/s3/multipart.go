@@ -273,7 +273,8 @@ type storedPart struct {
 }
 
 func (h *Handler) completeMultipartUpload(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.ownedBucket(req)
+	if err != nil {
 		return err
 	}
 	u, err := h.loadUpload(req, req.r.URL.Query().Get("uploadId"))
@@ -356,6 +357,7 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 	}
 
 	o := objectRow{Key: req.key, Size: size, ETag: etag, Parts: manifest, Meta: meta}
+	var vid string
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_uploads WHERE upload_id = ?`, u.ID)
 		if err != nil {
@@ -367,10 +369,14 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 		if err := tx.Change("s3", "CompleteMultipartUpload", req.bucket+"/"+req.key, map[string]any{"upload": u.ID, "parts": len(manifest)}); err != nil {
 			return err
 		}
-		return writeObjectTx(req, tx, o)
+		vid, err = writeObjectTx(req, tx, o)
+		return err
 	})
 	if err != nil {
 		return err
+	}
+	if b.Versioning == versioningEnabled {
+		req.w.Header().Set("x-amz-version-id", vid)
 	}
 	writeXML(req.w, http.StatusOK, res)
 	return nil
