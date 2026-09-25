@@ -17,12 +17,12 @@ Agents may tick checkboxes, add sub-steps, and mark a milestone `[done]` once it
 ## M1 — First bucket
 Goal: `aws s3 cp` works against a single region.
 Start here: every s3-tests test runs **ListBuckets** in its setup fixture. Its teardown empties prefixed buckets with **ListObjectVersions**, **DeleteObjects** and **DeleteBucket**. Until SigV4 plus those four operations work, no s3 test can pass, so build them first. Unversioned buckets report versions with `VersionId` `null`.
-- [ ] `internal/store`: SQLite (WAL, single writer), numbered migrations, change log table, HLC
-- [ ] Blob store: stream to tmp while hashing (SHA-256, MD5, requested checksum), fsync, rename
-- [ ] `internal/sigv4`: header auth, presigned URLs, UNSIGNED-PAYLOAD, aws-chunked (signed and unsigned) with trailing checksums, clock-skew check
-- [ ] Load bootstrap identities into the store (accounts, canonical IDs, keys)
-- [ ] S3: ListBuckets, CreateBucket (incl. LocationConstraint), HeadBucket, DeleteBucket, PutObject, GetObject (+ Range), HeadObject, DeleteObject, DeleteObjects, ListObjects v1/v2 (prefix, delimiter, pagination)
-- [ ] S3 error codes and XML exactly as AWS: NoSuchBucket, NoSuchKey, BucketAlreadyOwnedByYou, BucketNotEmpty, InvalidBucketName, SignatureDoesNotMatch, AccessDenied...
+- [x] `internal/store`: SQLite (WAL, single writer), numbered migrations, change log table, HLC
+- [x] Blob store: stream to tmp while hashing (SHA-256, MD5, requested checksum), fsync, rename
+- [x] `internal/sigv4`: header auth, presigned URLs, UNSIGNED-PAYLOAD, aws-chunked (signed and unsigned) with trailing checksums, clock-skew check
+- [x] Load bootstrap identities into the store (accounts, canonical IDs, keys)
+- [x] S3: ListBuckets, CreateBucket (incl. LocationConstraint), HeadBucket, DeleteBucket, PutObject, GetObject (+ Range), HeadObject, DeleteObject, DeleteObjects, ListObjects v1/v2 (prefix, delimiter, pagination)
+- [x] S3 error codes and XML exactly as AWS: NoSuchBucket, NoSuchKey, BucketAlreadyOwnedByYou, BucketNotEmpty, InvalidBucketName, SignatureDoesNotMatch, AccessDenied...
 Oracle: `smoke-s3`, `s3`.
 Exit: all 12 `smoke-s3` steps pass except `put-multipart`, `get-multipart` and `sync-roundtrip` (those land in M2); `s3` ≥ 120 passing.
 
