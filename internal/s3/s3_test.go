@@ -1,9 +1,15 @@
 package s3
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
 	"hash/crc64"
+	"io"
+	"strings"
 	"testing"
+
+	"citadel/internal/store"
 )
 
 func TestValidBucketName(t *testing.T) {
@@ -72,5 +78,41 @@ func TestCRC64NVME(t *testing.T) {
 	// base64 of big-endian CRC32 IEEE("hello") = 0x3610a686
 	if got, want := encodeChecksum(h), base64.StdEncoding.EncodeToString([]byte{0x36, 0x10, 0xa6, 0x86}); got != want {
 		t.Fatalf("crc32 = %s, want %s", got, want)
+	}
+}
+
+func TestManifestRangeReads(t *testing.T) {
+	st, err := store.Open(context.Background(), t.TempDir(), "test-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h := New(st, nil, "test-1", nil)
+	var parts []partRef
+	var whole []byte
+	for _, chunk := range []string{"hello ", "multipart ", "world"} {
+		p, err := st.Blobs.Write(strings.NewReader(chunk))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		parts = append(parts, partRef{Blob: p.SHA256, Size: p.Size})
+		whole = append(whole, chunk...)
+	}
+	o := &objectRow{Size: int64(len(whole)), Parts: parts}
+	for _, c := range []struct{ start, length int64 }{
+		{0, int64(len(whole))}, {0, 6}, {5, 3}, {6, 10}, {4, 14}, {20, 1}, {15, 6},
+	} {
+		rc, err := h.openRange(o, c.start, c.length)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(rc)
+		rc.Close()
+		if want := whole[c.start : c.start+c.length]; err != nil || !bytes.Equal(got, want) {
+			t.Errorf("range %d+%d: got %q (%v), want %q", c.start, c.length, got, err, want)
+		}
 	}
 }

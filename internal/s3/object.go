@@ -35,7 +35,8 @@ type objectMeta struct {
 	Headers      map[string]string `json:"headers,omitempty"` // canonical header name -> value
 	User         map[string]string `json:"user,omitempty"`    // x-amz-meta-* (lowercase suffix)
 	ChecksumAlgo string            `json:"checksum_algo,omitempty"`
-	Checksum     string            `json:"checksum,omitempty"` // base64
+	Checksum     string            `json:"checksum,omitempty"`      // base64
+	ChecksumType string            `json:"checksum_type,omitempty"` // FULL_OBJECT or COMPOSITE
 	StorageClass string            `json:"storage_class,omitempty"`
 }
 
@@ -48,25 +49,26 @@ type objectRow struct {
 	Size         int64
 	ETag         string
 	Blob         string
+	Parts        []partRef // multipart objects: the part blobs, in order
 	LastModified time.Time
 	Owner        string
 	Meta         objectMeta
 }
 
 func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error) {
-	q := `SELECT key, version_id, size, etag, blob, last_modified, owner, meta_json FROM s3_objects
+	q := `SELECT key, version_id, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
 		WHERE bucket = ? AND key = ? AND is_latest = 1 AND delete_marker = 0`
 	args := []any{req.bucket, req.key}
 	if versionID != "" {
-		q = `SELECT key, version_id, size, etag, blob, last_modified, owner, meta_json FROM s3_objects
+		q = `SELECT key, version_id, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
 			WHERE bucket = ? AND key = ? AND version_id = ? AND delete_marker = 0`
 		args = append(args, versionID)
 	}
 	var o objectRow
 	var lm int64
-	var meta string
+	var meta, parts string
 	err := h.st.DB().QueryRowContext(req.ctx, q, args...).
-		Scan(&o.Key, &o.VersionID, &o.Size, &o.ETag, &o.Blob, &lm, &o.Owner, &meta)
+		Scan(&o.Key, &o.VersionID, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta)
 	if errors.Is(err, sql.ErrNoRows) {
 		if versionID != "" {
 			return nil, &Error{Status: 404, Code: "NoSuchVersion", Message: "The specified version does not exist.", Bucket: req.bucket, Key: req.key}
@@ -79,6 +81,11 @@ func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error)
 	o.LastModified = msTime(lm)
 	if err := json.Unmarshal([]byte(meta), &o.Meta); err != nil {
 		return nil, err
+	}
+	if parts != "" {
+		if err := json.Unmarshal([]byte(parts), &o.Parts); err != nil {
+			return nil, err
+		}
 	}
 	return &o, nil
 }
@@ -100,15 +107,21 @@ func versionParam(req *request) (string, error) {
 	return v, nil
 }
 
-func (h *Handler) putObject(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
-		return err
-	}
-	r := req.r
-	if len(req.key) > maxKeyLength {
-		return errf(400, "KeyTooLongError", "Your key is too long")
-	}
+// ingested is a request body that has been streamed to a pending blob and
+// had every digest the client sent checked.
+type ingested struct {
+	pending  *store.Pending
+	algo     string // checksum algorithm computed ("" if none)
+	checksum string // base64 value of algo over the body
+	echo     bool   // client asked for the checksum: echo it in the response
+}
 
+// ingest streams the request body into the blob store, enforcing the length
+// rules and verifying Content-MD5 and any flexible checksum. defaultAlgo is
+// computed when the client names none ("" for no default). The caller must
+// Commit or Abort the pending blob.
+func (h *Handler) ingest(req *request, defaultAlgo string) (*ingested, error) {
+	r := req.r
 	size := r.ContentLength
 	if req.auth.Streaming {
 		size = req.auth.DecodedLength
@@ -117,34 +130,33 @@ func (h *Handler) putObject(req *request) error {
 	// body is then read to EOF, capped at the single-PUT limit.
 	chunkedTE := size < 0 && len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked"
 	if size < 0 && !chunkedTE {
-		return errf(411, "MissingContentLength", "You must provide the Content-Length HTTP header.")
+		return nil, errf(411, "MissingContentLength", "You must provide the Content-Length HTTP header.")
 	}
 	if size > maxObjectSize {
-		return errf(400, "EntityTooLarge", "Your proposed upload exceeds the maximum allowed size")
+		return nil, errf(400, "EntityTooLarge", "Your proposed upload exceeds the maximum allowed size")
 	}
 
 	var wantMD5 []byte
 	if s, ok := r.Header["Content-Md5"]; ok {
 		raw, err := base64.StdEncoding.DecodeString(strings.Join(s, ""))
 		if err != nil || len(raw) != md5.Size {
-			return errf(400, "InvalidDigest", "The Content-MD5 you specified was invalid.")
+			return nil, errf(400, "InvalidDigest", "The Content-MD5 you specified was invalid.")
 		}
 		wantMD5 = raw
 	}
 	rc, cerr := parseRequestedChecksum(r)
 	if cerr != nil {
-		return cerr
+		return nil, cerr
 	}
-	meta, merr := metaFromRequest(r)
-	if merr != nil {
-		return merr
-	}
-
 	algo := rc.Algo
 	if algo == "" {
-		algo = "CRC64NVME" // S3's default integrity checksum
+		algo = defaultAlgo
 	}
+	var extra []hash.Hash
 	sum := newChecksum(algo)
+	if sum != nil {
+		extra = append(extra, sum)
+	}
 
 	body := io.Reader(http.NoBody)
 	if r.Body != nil {
@@ -154,66 +166,104 @@ func (h *Handler) putObject(req *request) error {
 	if chunkedTE {
 		src = http.MaxBytesReader(req.w, r.Body, maxObjectSize)
 	}
-	pending, err := h.st.Blobs.Write(src, sum)
+	pending, err := h.st.Blobs.Write(src, extra...)
 	if err != nil {
-		return bodyError(err)
+		return nil, bodyError(err)
 	}
-	defer pending.Abort()
-
+	fail := func(e error) (*ingested, error) {
+		pending.Abort()
+		return nil, e
+	}
 	if wantMD5 != nil && !bytes.Equal(wantMD5, pending.MD5) {
-		return errf(400, "BadDigest", "The Content-MD5 you specified did not match what we received.")
+		return fail(errf(400, "BadDigest", "The Content-MD5 you specified did not match what we received."))
 	}
-	got := encodeChecksum(sum)
+	in := &ingested{pending: pending, algo: algo, echo: rc.Algo != ""}
+	if sum != nil {
+		in.checksum = encodeChecksum(sum)
+	}
 	want := rc.Value
 	if rc.Trailer {
 		want = r.Trailer.Get(checksumHeader(rc.Algo))
 		if want == "" {
-			return errf(400, "InvalidRequest", "x-amz-trailer header was specified but no trailer was received")
+			return fail(errf(400, "InvalidRequest", "x-amz-trailer header was specified but no trailer was received"))
 		}
 	}
-	if want != "" && want != got {
-		return checksumMismatch(rc.Algo)
+	if want != "" && want != in.checksum {
+		return fail(checksumMismatch(rc.Algo))
 	}
-	meta.ChecksumAlgo, meta.Checksum = algo, got
+	return in, nil
+}
 
-	if err := pending.Commit(); err != nil {
+func (h *Handler) putObject(req *request) error {
+	if _, err := h.ownedBucket(req); err != nil {
 		return err
 	}
-	etag := `"` + hex.EncodeToString(pending.MD5) + `"`
-	metaJSON, _ := json.Marshal(meta)
-	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
-		// The bucket may have been deleted while the body streamed in.
-		var one int
-		if err := tx.QueryRowContext(req.ctx, `SELECT 1 FROM s3_buckets WHERE name = ?`, req.bucket).Scan(&one); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return errNoSuchBucket(req.bucket)
-			}
-			return err
-		}
-		if _, err := tx.ExecContext(req.ctx, `
-			INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, last_modified, owner, meta_json, hlc)
-			VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(bucket, key, version_id) DO UPDATE SET
-				seq=excluded.seq, is_latest=1, delete_marker=0, size=excluded.size, etag=excluded.etag, blob=excluded.blob,
-				last_modified=excluded.last_modified, owner=excluded.owner, meta_json=excluded.meta_json, hlc=excluded.hlc`,
-			req.bucket, req.key, nullVersion, int64(tx.HLC()), pending.Size, etag, pending.SHA256,
-			tx.HLC().WallMs(), req.who.Account.ID, string(metaJSON), int64(tx.HLC())); err != nil {
-			return err
-		}
-		return tx.Change("s3", "PutObject", req.bucket+"/"+req.key, map[string]any{
-			"version": nullVersion, "blob": pending.SHA256, "size": pending.Size, "etag": etag,
-		})
-	})
+	if len(req.key) > maxKeyLength {
+		return errf(400, "KeyTooLongError", "Your key is too long")
+	}
+	meta, merr := metaFromRequest(req.r)
+	if merr != nil {
+		return merr
+	}
+	in, err := h.ingest(req, "CRC64NVME") // S3's default integrity checksum
 	if err != nil {
 		return err
 	}
+	defer in.pending.Abort()
+	meta.ChecksumAlgo, meta.Checksum, meta.ChecksumType = in.algo, in.checksum, "FULL_OBJECT"
+	if err := in.pending.Commit(); err != nil {
+		return err
+	}
+	etag := `"` + hex.EncodeToString(in.pending.MD5) + `"`
+	if err := h.writeObject(req, objectRow{
+		Key: req.key, Size: in.pending.Size, ETag: etag, Blob: in.pending.SHA256, Meta: meta,
+	}); err != nil {
+		return err
+	}
 	req.w.Header().Set("ETag", etag)
-	if rc.Algo != "" {
-		req.w.Header().Set(checksumHeader(rc.Algo), got)
+	if in.echo {
+		req.w.Header().Set(checksumHeader(in.algo), in.checksum)
 		req.w.Header().Set("x-amz-checksum-type", "FULL_OBJECT")
 	}
 	req.w.WriteHeader(http.StatusOK)
 	return nil
+}
+
+// writeObject records o as the current ("null") version of its key. The
+// caller has already committed the blob(s) it points to.
+func (h *Handler) writeObject(req *request, o objectRow) error {
+	return h.st.Update(req.ctx, func(tx *store.Tx) error { return writeObjectTx(req, tx, o) })
+}
+
+func writeObjectTx(req *request, tx *store.Tx, o objectRow) error {
+	metaJSON, _ := json.Marshal(o.Meta)
+	partsJSON := ""
+	if len(o.Parts) > 0 {
+		b, _ := json.Marshal(o.Parts)
+		partsJSON = string(b)
+	}
+	// The bucket may have been deleted while the body streamed in.
+	var one int
+	if err := tx.QueryRowContext(req.ctx, `SELECT 1 FROM s3_buckets WHERE name = ?`, req.bucket).Scan(&one); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errNoSuchBucket(req.bucket)
+		}
+		return err
+	}
+	if _, err := tx.ExecContext(req.ctx, `
+		INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json, hlc)
+		VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(bucket, key, version_id) DO UPDATE SET
+			seq=excluded.seq, is_latest=1, delete_marker=0, size=excluded.size, etag=excluded.etag, blob=excluded.blob,
+			parts_json=excluded.parts_json, last_modified=excluded.last_modified, owner=excluded.owner,
+			meta_json=excluded.meta_json, hlc=excluded.hlc`,
+		req.bucket, o.Key, nullVersion, int64(tx.HLC()), o.Size, o.ETag, o.Blob, partsJSON,
+		tx.HLC().WallMs(), req.who.Account.ID, string(metaJSON), int64(tx.HLC())); err != nil {
+		return err
+	}
+	return tx.Change("s3", "PutObject", req.bucket+"/"+o.Key, map[string]any{
+		"version": nullVersion, "blob": o.Blob, "parts": len(o.Parts), "size": o.Size, "etag": o.ETag,
+	})
 }
 
 // metaFromRequest collects the headers S3 stores with an object.
@@ -415,7 +465,11 @@ func (h *Handler) getObject(req *request, head bool) error {
 	}
 	if strings.EqualFold(r.Header.Get("X-Amz-Checksum-Mode"), "ENABLED") && !partial && o.Meta.ChecksumAlgo != "" {
 		hdr.Set(checksumHeader(o.Meta.ChecksumAlgo), o.Meta.Checksum)
-		hdr.Set("x-amz-checksum-type", "FULL_OBJECT")
+		ct := o.Meta.ChecksumType
+		if ct == "" {
+			ct = "FULL_OBJECT"
+		}
+		hdr.Set("x-amz-checksum-type", ct)
 	}
 	hdr.Set("Content-Length", strconv.FormatInt(length, 10))
 	status := http.StatusOK
@@ -428,13 +482,13 @@ func (h *Handler) getObject(req *request, head bool) error {
 		w.WriteHeader(status)
 		return nil
 	}
-	f, err := h.st.Blobs.Open(o.Blob)
+	body, err := h.openRange(o, start, length)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer body.Close()
 	w.WriteHeader(status)
-	_, _ = io.Copy(w, io.NewSectionReader(f, start, length))
+	_, _ = io.Copy(w, body)
 	return nil
 }
 

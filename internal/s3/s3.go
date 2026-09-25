@@ -128,6 +128,8 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.getBucketVersioning(req)
 	case sub == "delete" && m == http.MethodPost:
 		return h.deleteObjects(req)
+	case sub == "uploads" && m == http.MethodGet:
+		return h.listMultipartUploads(req)
 	}
 	if sub == "" {
 		return errf(405, "MethodNotAllowed", "The specified method is not allowed against this resource.")
@@ -137,6 +139,22 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 
 func (h *Handler) objectOp(req *request, sub string) error {
 	m := req.r.Method
+	q := req.r.URL.Query()
+	if _, ok := q["uploadId"]; ok {
+		switch m {
+		case http.MethodPut:
+			return h.uploadPart(req)
+		case http.MethodPost:
+			return h.completeMultipartUpload(req)
+		case http.MethodDelete:
+			return h.abortMultipartUpload(req)
+		case http.MethodGet:
+			return h.listParts(req)
+		}
+	}
+	if sub == "uploads" && m == http.MethodPost {
+		return h.createMultipartUpload(req)
+	}
 	if sub == "" {
 		switch m {
 		case http.MethodPut:

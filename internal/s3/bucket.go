@@ -131,6 +131,10 @@ func (h *Handler) deleteBucket(req *request) error {
 		if n > 0 {
 			return &Error{Status: 409, Code: "BucketNotEmpty", Message: "The bucket you tried to delete is not empty", Bucket: req.bucket}
 		}
+		// In-progress multipart uploads don't keep a bucket alive; their parts go too.
+		if _, err := tx.ExecContext(req.ctx, `DELETE FROM s3_uploads WHERE bucket = ?`, req.bucket); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_buckets WHERE name = ?`, req.bucket)
 		if err != nil {
 			return err
