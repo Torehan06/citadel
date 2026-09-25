@@ -1,0 +1,3 @@
+tests/test_sqs/test_sqs.py::test_is_empty_redrive_policy_returns_false_for_valid_policy_format
+tests/test_sqs/test_sqs.py::test_is_empty_redrive_policy_returns_true_for_empty_and_falsy_values
+tests/test_sqs/test_sqs.py::test_redrive_policy_non_existent_queue
