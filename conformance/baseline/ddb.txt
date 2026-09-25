@@ -256,6 +256,21 @@ test/alternator/test_gsi.py::test_gsi_wrong_type_attribute_update
 test/alternator/test_gsi.py::test_gsi_wrong_type_attribute_update_nested
 test/alternator/test_gsi.py::test_update_gsi_ck
 test/alternator/test_gsi.py::test_update_gsi_pk
+test/alternator/test_gsi_updatetable.py::test_gsi_backfill
+test/alternator/test_gsi_updatetable.py::test_gsi_backfill_empty_string
+test/alternator/test_gsi_updatetable.py::test_gsi_backfill_key_limits
+test/alternator/test_gsi_updatetable.py::test_gsi_backfill_oversized_key
+test/alternator/test_gsi_updatetable.py::test_gsi_backfill_with_real_column
+test/alternator/test_gsi_updatetable.py::test_gsi_creates_and_deletes
+test/alternator/test_gsi_updatetable.py::test_gsi_delete
+test/alternator/test_gsi_updatetable.py::test_gsi_delete_with_lsi
+test/alternator/test_gsi_updatetable.py::test_gsi_key_type_conflict_on_update
+test/alternator/test_gsi_updatetable.py::test_gsi_updatetable_combined_with_streams
+test/alternator/test_gsi_updatetable.py::test_gsi_updatetable_errors
+test/alternator/test_gsi_updatetable.py::test_gsi_updatetable_very_long_name_255
+test/alternator/test_gsi_updatetable.py::test_gsi_updatetable_very_long_name_256
+test/alternator/test_gsi_updatetable.py::test_updatetable_delete_missing_gsi
+test/alternator/test_gsi_updatetable.py::test_updatetable_empty
 test/alternator/test_item.py::test_attribute_allowed_chars
 test/alternator/test_item.py::test_basic_string_more_update
 test/alternator/test_item.py::test_basic_string_put_and_get
@@ -658,6 +673,60 @@ test/alternator/test_tag.py::test_tag_value_length_256_allowed[False]
 test/alternator/test_tag.py::test_tag_value_length_256_allowed[True]
 test/alternator/test_tag.py::test_tag_value_length_257_forbidden
 test/alternator/test_tag.py::test_too_long_tags_from_creation
+test/alternator/test_transact.py::test_transact_get_items_100
+test/alternator/test_transact.py::test_transact_get_items_101
+test/alternator/test_transact.py::test_transact_get_items_missing
+test/alternator/test_transact.py::test_transact_get_items_missing_expressionattributenames
+test/alternator/test_transact.py::test_transact_get_items_one
+test/alternator/test_transact.py::test_transact_get_items_projection_expression
+test/alternator/test_transact.py::test_transact_get_items_projection_expression_attribute_names
+test/alternator/test_transact.py::test_transact_get_items_unused_expressionattributenames
+test/alternator/test_transact.py::test_transact_write_cancellation_reasons_conditionalcheckfailed
+test/alternator/test_transact.py::test_transact_write_items_100
+test/alternator/test_transact.py::test_transact_write_items_101
+test/alternator/test_transact.py::test_transact_write_items_clientrequesttoken
+test/alternator/test_transact.py::test_transact_write_items_clientrequesttoken_length
+test/alternator/test_transact.py::test_transact_write_items_clientrequesttoken_mismatch
+test/alternator/test_transact.py::test_transact_write_items_delete_5MB
+test/alternator/test_transact.py::test_transact_write_items_empty
+test/alternator/test_transact.py::test_transact_write_items_missing_name
+test/alternator/test_transact.py::test_transact_write_items_missing_value
+test/alternator/test_transact.py::test_transact_write_items_multi_action_conflict
+test/alternator/test_transact.py::test_transact_write_items_multi_action_false
+test/alternator/test_transact.py::test_transact_write_items_multi_action_true
+test/alternator/test_transact.py::test_transact_write_items_multi_table_true
+test/alternator/test_transact.py::test_transact_write_items_put_3MB
+test/alternator/test_transact.py::test_transact_write_items_serialization_exception
+test/alternator/test_transact.py::test_transact_write_items_single_conditioncheck_false
+test/alternator/test_transact.py::test_transact_write_items_single_conditioncheck_true
+test/alternator/test_transact.py::test_transact_write_items_single_conditioncheck_unconditional
+test/alternator/test_transact.py::test_transact_write_items_single_delete_false
+test/alternator/test_transact.py::test_transact_write_items_single_delete_true
+test/alternator/test_transact.py::test_transact_write_items_single_delete_unconditional
+test/alternator/test_transact.py::test_transact_write_items_single_put_false
+test/alternator/test_transact.py::test_transact_write_items_single_put_replaces
+test/alternator/test_transact.py::test_transact_write_items_single_put_true
+test/alternator/test_transact.py::test_transact_write_items_single_put_unconditional
+test/alternator/test_transact.py::test_transact_write_items_single_update_false
+test/alternator/test_transact.py::test_transact_write_items_single_update_true
+test/alternator/test_transact.py::test_transact_write_items_single_update_unconditional
+test/alternator/test_transact.py::test_transact_write_items_syntax_error
+test/alternator/test_transact.py::test_transact_write_items_unused_name
+test/alternator/test_transact.py::test_transact_write_items_unused_value
+test/alternator/test_ttl.py::test_describe_ttl_without_ttl[using tablets]
+test/alternator/test_ttl.py::test_describe_ttl_without_ttl[using vnodes]
+test/alternator/test_ttl.py::test_ttl_disable[using tablets]
+test/alternator/test_ttl.py::test_ttl_disable[using vnodes]
+test/alternator/test_ttl.py::test_ttl_disable_errors[using tablets]
+test/alternator/test_ttl.py::test_ttl_disable_errors[using vnodes]
+test/alternator/test_ttl.py::test_ttl_enable[using tablets]
+test/alternator/test_ttl.py::test_ttl_enable[using vnodes]
+test/alternator/test_ttl.py::test_ttl_expiration_hash_wrong_type[using tablets]
+test/alternator/test_ttl.py::test_ttl_expiration_hash_wrong_type[using vnodes]
+test/alternator/test_ttl.py::test_ttl_tag_is_invisible[using tablets]
+test/alternator/test_ttl.py::test_ttl_tag_is_invisible[using vnodes]
+test/alternator/test_ttl.py::test_update_ttl_errors[using tablets]
+test/alternator/test_ttl.py::test_update_ttl_errors[using vnodes]
 test/alternator/test_update_expression.py::test_nested_attribute_remove_from_missing_item
 test/alternator/test_update_expression.py::test_nested_attribute_remove_missing_leaf
 test/alternator/test_update_expression.py::test_update_expression_action_case
