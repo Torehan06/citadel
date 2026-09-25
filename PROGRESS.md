@@ -110,3 +110,10 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Conformance: initial ratchet running; final entry will record every enabled suite's measured before/after values.
 - Concept: a queue receive leases a message for a visibility interval rather than removing it. Durable lease state and a fresh receipt handle let another consumer retry after a crash.
 - Next: measure initial SQS failures, then implement the largest shared missing operations.
+
+### 2026-09-26 01:40 · Codex · M4 · Queue storage and both wire protocols
+- Did: migration 0007; authenticated SQS JSON and Query handlers; durable queue creation/deletion, URL lookup/listing, attributes, tags and purge. Ticked protocol and URL checkboxes. Account and region namespaces come from verified signatures; queue URLs use the request host and authenticated account.
+- Conformance: initial ratchet s3 383, smoke-s3 12, ddb 800, sqs 3. Queue-focused run: 0 → 35 passing. Queue lifecycle/isolation, attribute bounds, query decoding and XML escaping covered by unit tests.
+- Decisions: initial planning entry's 07:10 heading followed prior log timestamps; actual local session time is 01:xx. Use real local timestamps henceforth. Reject malformed boolean attributes and retention below AWS's 60-second minimum even where moto accepts them. STS-dependent test fixtures remain unavailable until M5; no STS work is being started.
+- Concept: JSON and Query requests decode into the same operations, so the transport changes the envelope, not the queue's behavior. SQLite keeps queues separate by account and signing region.
+- Next: standard message delivery, checksums, batches and long polling.

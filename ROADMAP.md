@@ -52,12 +52,12 @@ Conformance: add `ddb` to `conformance/suites` when you start this milestone.
 Exit: `ddb` ≥ 450 passing.
 
 ## M4 — SQS
-- [ ] JSON 1.0 protocol plus query protocol fallback
+- [x] JSON 1.0 protocol plus query protocol fallback
 - [ ] Standard queues: create, get URL, attributes, send / receive / delete (+ batch), visibility timeout, change visibility, delay, purge
 - [ ] Long polling up to 20 s without busy loops; message attributes and MD5s exactly as AWS computes them
 - [ ] Redrive policy / DLQ, message retention
 - [ ] FIFO: dedup (content-based and explicit), message groups, ordering
-- [ ] Queue URLs as `http://<host>/<account>/<name>`. moto's tests expect account 123456789012.
+- [x] Queue URLs as `http://<host>/<account>/<name>`. moto's tests expect account 123456789012.
 Conformance: add `sqs` to `conformance/suites`.
 Exit: `sqs` ≥ 110 passing.
 
