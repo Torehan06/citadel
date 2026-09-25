@@ -14,7 +14,7 @@ Agents may tick checkboxes, add sub-steps, and mark a milestone `[done]` once it
 - [x] Service detection (SigV4 scope, X-Amz-Target, paths) and 501 NotImplemented in each protocol's error format
 - [x] Oracle runners for s3, smoke-s3, ddb, sqs, iam, lambda, route53; ratchet; night-shift loop; CI
 
-## M1 — First bucket
+## M1 — First bucket [done]
 Goal: `aws s3 cp` works against a single region.
 Start here: every s3-tests test runs **ListBuckets** in its setup fixture. Its teardown empties prefixed buckets with **ListObjectVersions**, **DeleteObjects** and **DeleteBucket**. Until SigV4 plus those four operations work, no s3 test can pass, so build them first. Unversioned buckets report versions with `VersionId` `null`.
 - [x] `internal/store`: SQLite (WAL, single writer), numbered migrations, change log table, HLC

@@ -15,3 +15,11 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Known limits: `test_*_bad_expect_mismatch` gets 417 from Go's net/http, which rejects unknown `Expect` values before any handler runs. `test_object_read_unreadable` expects AWS's 400 "Couldn't parse the specified URI" for a key with C1 control characters; the exact AWS rule is unclear, so it's left red.
 - Concept: SigV4 never sends the secret. Both sides derive a signing key by chaining HMACs over date → region → service → "aws4_request", then HMAC a canonical form of the request; for aws-chunked uploads each chunk's signature also covers the previous one, so a stream can't be spliced.
 - Next: smoke-s3 `list-recursive` greps for `dir/big.bin`, which the multipart step uploads, so the M1 smoke exit needs a basic multipart upload (create/upload part/complete/abort) pulled forward from M2.
+
+### 2026-09-25 22:05 · claude-opus-5.5 (interactive) · M1 · Multipart pulled forward; M1 done
+- Did: multipart upload (create, upload part, complete, abort, list parts, list uploads). Parts are blobs, and completion writes a part manifest in the same transaction that retires the upload, so no bytes are copied; GET streams ranges across the manifest. Migration 0002. POST /bucket (PostObject) now answers 501 instead of 405.
+- Oracle: M1 overall s3 0 → 189 (of 494), smoke-s3 0 → 12 (of 12). This session's last step: s3 166 → 189, smoke-s3 9 → 12. Final ratchet: green, 66 unit tests.
+- Why multipart landed in M1: smoke-s3 `list-recursive` greps for `dir/big.bin`, which only the multipart step creates, so the M1 exit (every step except put/get-multipart and sync-roundtrip) needs it. UploadPartCopy, FULL_OBJECT multipart checksums, and delimiter/upload-id-marker paging in ListMultipartUploads are still M2.
+- Concept: a multipart ETag is not an MD5 of the object. It's the MD5 of the concatenated binary part MD5s plus "-N", which is why clients can't check a multipart download against its ETag and S3 added flexible checksums.
+- Next: M2. The biggest failing families are object lock (39), POST object (36, browser uploads), copy (17+), bucket policy (16+), ACLs, and versioning. Versioning changes the objects table semantics most, so start there. Blobs of overwritten/deleted objects and aborted parts are still unreferenced until the M2 sweeper exists.
+- Requests for the human: none.
