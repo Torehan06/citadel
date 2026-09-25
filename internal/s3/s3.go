@@ -71,6 +71,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request) error {
+	bucket, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if r.Method == http.MethodOptions && bucket != "" {
+		return h.preflight(w, r, bucket) // browsers never sign preflights
+	}
+	h.applyCORS(w, r, bucket) // before anything is written, so errors carry it too
+
 	auth, err := h.auth.Verify(r)
 	if err != nil {
 		return err
@@ -160,6 +166,18 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.putBucketTagging(req)
 	case sub == "tagging" && m == http.MethodDelete:
 		return h.deleteBucketTagging(req)
+	case sub == "cors" && m == http.MethodGet:
+		return h.getBucketCORS(req)
+	case sub == "cors" && m == http.MethodPut:
+		return h.putBucketCORS(req)
+	case sub == "cors" && m == http.MethodDelete:
+		return h.deleteBucketCORS(req)
+	case sub == "lifecycle" && m == http.MethodGet:
+		return h.getBucketLifecycle(req)
+	case sub == "lifecycle" && m == http.MethodPut:
+		return h.putBucketLifecycle(req)
+	case sub == "lifecycle" && m == http.MethodDelete:
+		return h.deleteBucketLifecycle(req)
 	case sub == "" && m == http.MethodPost:
 		return errNotImplemented("PostObject (browser-based upload)")
 	}
