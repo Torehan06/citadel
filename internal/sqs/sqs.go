@@ -152,6 +152,14 @@ func (h *Handler) serve(r *http.Request, query bool) (string, map[string]any, er
 }
 func (h *Handler) dispatch(c *call, op string, r *request) (map[string]any, error) {
 	switch op {
+	case "SendMessage":
+		return h.sendMessage(c, r)
+	case "ReceiveMessage":
+		return h.receiveMessage(c, r)
+	case "DeleteMessage", "ChangeMessageVisibility":
+		return h.receiptOperation(c, op, r)
+	case "SendMessageBatch", "DeleteMessageBatch", "ChangeMessageVisibilityBatch":
+		return h.batch(c, op, r)
 	case "CreateQueue":
 		return h.createQueue(c, r)
 	case "GetQueueUrl":

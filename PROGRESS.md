@@ -117,3 +117,10 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Decisions: initial planning entry's 07:10 heading followed prior log timestamps; actual local session time is 01:xx. Use real local timestamps henceforth. Reject malformed boolean attributes and retention below AWS's 60-second minimum even where moto accepts them. STS-dependent test fixtures remain unavailable until M5; no STS work is being started.
 - Concept: JSON and Query requests decode into the same operations, so the transport changes the envelope, not the queue's behavior. SQLite keeps queues separate by account and signing region.
 - Next: standard message delivery, checksums, batches and long polling.
+
+### 2026-09-26 01:49 · Codex · M4 · Standard message delivery and long polling
+- Did: ticked standard queues and long-poll/MD5 checkboxes. Durable sends, receives, fresh receipt handles, delete, visibility changes, queue/message delay, partial-success batches, UTF-8/XML-character validation, custom/system attributes and AWS length-prefixed MD5 encoding. Long polls wait on a notifier or the earliest visibility deadline, with cancellation and a 20-second bound.
+- Conformance: sqs 37 → 84 passing (13 upstream skips); s3 383, smoke-s3 12, ddb 800 at the last green ratchet. Message-focused run 28 passing; no SQS 500s. Unit tests cover leases, MD5 vectors, filters, exact decimals, batch failures, send wakeups and delayed-message wakeups.
+- Decisions: standard queues accept MessageGroupId per current AWS fair-queue semantics; MessageDeduplicationId remains FIFO-only. Retention is enforced on receive and expired messages are excluded from counts. Message bodies are bounded by SQS's 1 MiB limit (this API's small JSON payload is necessarily decoded in memory).
+- Concept: a long poll registers for notification before inspecting durable state, so a send cannot slip between the empty check and the wait. A timer handles messages whose delay or visibility lease expires without a new send.
+- Next: FIFO deduplication and group exclusion, DLQ transfers, retention/restart tests, then final M4 validation.

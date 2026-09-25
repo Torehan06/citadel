@@ -53,8 +53,8 @@ Exit: `ddb` ≥ 450 passing.
 
 ## M4 — SQS
 - [x] JSON 1.0 protocol plus query protocol fallback
-- [ ] Standard queues: create, get URL, attributes, send / receive / delete (+ batch), visibility timeout, change visibility, delay, purge
-- [ ] Long polling up to 20 s without busy loops; message attributes and MD5s exactly as AWS computes them
+- [x] Standard queues: create, get URL, attributes, send / receive / delete (+ batch), visibility timeout, change visibility, delay, purge
+- [x] Long polling up to 20 s without busy loops; message attributes and MD5s exactly as AWS computes them
 - [ ] Redrive policy / DLQ, message retention
 - [ ] FIFO: dedup (content-based and explicit), message groups, ordering
 - [x] Queue URLs as `http://<host>/<account>/<name>`. moto's tests expect account 123456789012.
