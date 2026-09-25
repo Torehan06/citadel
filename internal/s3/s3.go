@@ -4,8 +4,6 @@ package s3
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -132,6 +130,36 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.deleteObjects(req)
 	case sub == "uploads" && m == http.MethodGet:
 		return h.listMultipartUploads(req)
+	case sub == "acl" && m == http.MethodGet:
+		return h.getBucketACL(req)
+	case sub == "acl" && m == http.MethodPut:
+		return h.putBucketACL(req)
+	case sub == "policy" && m == http.MethodGet:
+		return h.getBucketPolicy(req)
+	case sub == "policy" && m == http.MethodPut:
+		return h.putBucketPolicy(req)
+	case sub == "policy" && m == http.MethodDelete:
+		return h.deleteBucketPolicy(req)
+	case sub == "policyStatus" && m == http.MethodGet:
+		return h.getBucketPolicyStatus(req)
+	case sub == "publicAccessBlock" && m == http.MethodGet:
+		return h.getPublicAccessBlock(req)
+	case sub == "publicAccessBlock" && m == http.MethodPut:
+		return h.putPublicAccessBlock(req)
+	case sub == "publicAccessBlock" && m == http.MethodDelete:
+		return h.deletePublicAccessBlock(req)
+	case sub == "ownershipControls" && m == http.MethodGet:
+		return h.getOwnershipControls(req)
+	case sub == "ownershipControls" && m == http.MethodPut:
+		return h.putOwnershipControls(req)
+	case sub == "ownershipControls" && m == http.MethodDelete:
+		return h.deleteOwnershipControls(req)
+	case sub == "tagging" && m == http.MethodGet:
+		return h.getBucketTagging(req)
+	case sub == "tagging" && m == http.MethodPut:
+		return h.putBucketTagging(req)
+	case sub == "tagging" && m == http.MethodDelete:
+		return h.deleteBucketTagging(req)
 	case sub == "" && m == http.MethodPost:
 		return errNotImplemented("PostObject (browser-based upload)")
 	}
@@ -156,8 +184,19 @@ func (h *Handler) objectOp(req *request, sub string) error {
 			return h.listParts(req)
 		}
 	}
-	if sub == "uploads" && m == http.MethodPost {
+	switch {
+	case sub == "uploads" && m == http.MethodPost:
 		return h.createMultipartUpload(req)
+	case sub == "acl" && m == http.MethodGet:
+		return h.getObjectACL(req)
+	case sub == "acl" && m == http.MethodPut:
+		return h.putObjectACL(req)
+	case sub == "tagging" && m == http.MethodGet:
+		return h.getObjectTagging(req)
+	case sub == "tagging" && m == http.MethodPut:
+		return h.putObjectTagging(req, false)
+	case sub == "tagging" && m == http.MethodDelete:
+		return h.putObjectTagging(req, true)
 	}
 	if sub == "" {
 		switch m {
@@ -174,45 +213,6 @@ func (h *Handler) objectOp(req *request, sub string) error {
 		return errf(405, "MethodNotAllowed", "The specified method is not allowed against this resource.")
 	}
 	return errNotImplemented(m + " object ?" + sub)
-}
-
-// bucketInfo is a bucket row plus its owner.
-type bucketInfo struct {
-	Name       string
-	Account    string
-	Region     string
-	Location   string
-	Created    time.Time
-	Versioning string
-}
-
-func (h *Handler) loadBucket(ctx context.Context, name string) (*bucketInfo, error) {
-	var b bucketInfo
-	var created int64
-	err := h.st.DB().QueryRowContext(ctx,
-		`SELECT name, account_id, region, location_constraint, created, versioning FROM s3_buckets WHERE name = ?`, name).
-		Scan(&b.Name, &b.Account, &b.Region, &b.Location, &created, &b.Versioning)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errNoSuchBucket(name)
-	}
-	if err != nil {
-		return nil, err
-	}
-	b.Created = time.UnixMilli(created).UTC()
-	return &b, nil
-}
-
-// ownedBucket loads a bucket and checks the caller may use it. Until bucket
-// ACLs and policies land (M2), only the owning account may.
-func (h *Handler) ownedBucket(req *request) (*bucketInfo, error) {
-	b, err := h.loadBucket(req.ctx, req.bucket)
-	if err != nil {
-		return nil, err
-	}
-	if req.who == nil || req.who.Account.ID != b.Account {
-		return nil, errAccessDenied()
-	}
-	return b, nil
 }
 
 const isoMillis = "2006-01-02T15:04:05.000Z"

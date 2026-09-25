@@ -72,7 +72,7 @@ func errNoSuchVersion(b, k string) *Error {
 }
 
 func (h *Handler) putBucketVersioning(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:PutBucketVersioning", ""); err != nil {
 		return err
 	}
 	body, err := readSmallBody(req, 64<<10, false)
@@ -129,17 +129,21 @@ func insertVersionTx(req *request, tx *store.Tx, o objectRow, deleteMarker bool)
 	}
 	owner := o.Owner
 	if owner == "" {
-		owner = req.who.Account.ID
+		owner = req.account()
+	}
+	aclJSON := ""
+	if o.ACL != nil {
+		aclJSON = o.ACL.json()
 	}
 	_, err := tx.ExecContext(req.ctx, `
-		INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json, hlc)
-		VALUES (?, ?, ?, `+nextSeq+`, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json, acl, tagging, hlc)
+		VALUES (?, ?, ?, `+nextSeq+`, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(bucket, key, version_id) DO UPDATE SET
 			seq=excluded.seq, is_latest=1, delete_marker=excluded.delete_marker, size=excluded.size, etag=excluded.etag,
 			blob=excluded.blob, parts_json=excluded.parts_json, last_modified=excluded.last_modified, owner=excluded.owner,
-			meta_json=excluded.meta_json, hlc=excluded.hlc`,
+			meta_json=excluded.meta_json, acl=excluded.acl, tagging=excluded.tagging, hlc=excluded.hlc`,
 		req.bucket, o.Key, o.VersionID, int64(tx.HLC()), req.bucket, o.Key, boolInt(deleteMarker), o.Size, o.ETag, o.Blob,
-		partsJSON, tx.HLC().WallMs(), owner, string(metaJSON), int64(tx.HLC()))
+		partsJSON, tx.HLC().WallMs(), owner, string(metaJSON), aclJSON, tagsJSON(o.Tags), int64(tx.HLC()))
 	return err
 }
 
@@ -243,11 +247,19 @@ func deleteObjectTx(req *request, tx *store.Tx, key, versionID string) (deleteOu
 }
 
 func (h *Handler) deleteObject(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.loadBucket(req.ctx, req.bucket)
+	if err != nil {
 		return err
 	}
 	vid, err := versionParam(req)
 	if err != nil {
+		return err
+	}
+	action := "s3:DeleteObject"
+	if vid != "" {
+		action = "s3:DeleteObjectVersion"
+	}
+	if err := h.authorizeWrite(req, b, req.key, action); err != nil {
 		return err
 	}
 	var out deleteOutcome
@@ -409,7 +421,7 @@ type deleteMarkerItem struct {
 }
 
 func (h *Handler) listObjectVersions(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:ListBucketVersions", permRead); err != nil {
 		return err
 	}
 	q := req.r.URL.Query()

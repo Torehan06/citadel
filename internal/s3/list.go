@@ -247,7 +247,7 @@ type listBucketResultV1 struct {
 }
 
 func (h *Handler) listObjectsV1(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:ListBucket", permRead); err != nil {
 		return err
 	}
 	q := req.r.URL.Query()
@@ -295,7 +295,7 @@ type listBucketResultV2 struct {
 }
 
 func (h *Handler) listObjectsV2(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:ListBucket", permRead); err != nil {
 		return err
 	}
 	q := req.r.URL.Query()
@@ -375,7 +375,8 @@ type deleteErrItem struct {
 const maxDeleteObjects = 1000
 
 func (h *Handler) deleteObjects(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.loadBucket(req.ctx, req.bucket)
+	if err != nil {
 		return err
 	}
 	body, err := readSmallBody(req, 2<<20, true)
@@ -392,6 +393,15 @@ func (h *Handler) deleteObjects(req *request) error {
 			if o.VersionID != "" && !validVersionID(o.VersionID) {
 				res.Errors = append(res.Errors, deleteErrItem{Key: o.Key, VersionID: o.VersionID,
 					Code: "NoSuchVersion", Message: "The specified version does not exist."})
+				continue
+			}
+			action := "s3:DeleteObject"
+			if o.VersionID != "" {
+				action = "s3:DeleteObjectVersion"
+			}
+			if h.authorizeWrite(req, b, o.Key, action) != nil {
+				res.Errors = append(res.Errors, deleteErrItem{Key: o.Key, VersionID: o.VersionID,
+					Code: "AccessDenied", Message: "Access Denied"})
 				continue
 			}
 			out, err := deleteObjectTx(req, tx, o.Key, o.VersionID)

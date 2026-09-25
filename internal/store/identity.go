@@ -75,9 +75,23 @@ func (s *Store) LookupKey(ctx context.Context, accessKey string) (secret string,
 
 // AccountByID returns an account.
 func (s *Store) AccountByID(ctx context.Context, id string) (Account, error) {
+	return s.accountWhere(ctx, `id = ?`, id)
+}
+
+// AccountByCanonicalID returns the account with this S3 canonical user ID.
+func (s *Store) AccountByCanonicalID(ctx context.Context, canonicalID string) (Account, error) {
+	return s.accountWhere(ctx, `canonical_id = ?`, canonicalID)
+}
+
+// AccountByEmail returns the account registered with this email address.
+func (s *Store) AccountByEmail(ctx context.Context, email string) (Account, error) {
+	return s.accountWhere(ctx, `email = ? COLLATE NOCASE`, email)
+}
+
+func (s *Store) accountWhere(ctx context.Context, where string, arg any) (Account, error) {
 	var a Account
 	err := s.r.QueryRowContext(ctx,
-		`SELECT id, canonical_id, display_name, email FROM accounts WHERE id = ?`, id).
+		`SELECT id, canonical_id, display_name, email FROM accounts WHERE `+where+` LIMIT 1`, arg).
 		Scan(&a.ID, &a.CanonicalID, &a.DisplayName, &a.Email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound

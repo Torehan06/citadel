@@ -146,7 +146,11 @@ type initiateResult struct {
 }
 
 func (h *Handler) createMultipartUpload(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.loadBucket(req.ctx, req.bucket)
+	if err != nil {
+		return err
+	}
+	if err := h.authorizeWrite(req, b, req.key, "s3:PutObject"); err != nil {
 		return err
 	}
 	if len(req.key) > maxKeyLength {
@@ -168,7 +172,7 @@ func (h *Handler) createMultipartUpload(req *request) error {
 	}
 	metaJSON, _ := json.Marshal(meta)
 	id := newUploadID()
-	err := h.st.Update(req.ctx, func(tx *store.Tx) error {
+	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		if _, err := tx.ExecContext(req.ctx,
 			`INSERT INTO s3_uploads(upload_id, bucket, key, initiated, owner, meta_json) VALUES (?, ?, ?, ?, ?, ?)`,
 			id, req.bucket, req.key, tx.HLC().WallMs(), req.who.Account.ID, string(metaJSON)); err != nil {
@@ -188,7 +192,11 @@ func (h *Handler) createMultipartUpload(req *request) error {
 }
 
 func (h *Handler) uploadPart(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.loadBucket(req.ctx, req.bucket)
+	if err != nil {
+		return err
+	}
+	if err := h.authorizeWrite(req, b, req.key, "s3:PutObject"); err != nil {
 		return err
 	}
 	q := req.r.URL.Query()
@@ -273,8 +281,11 @@ type storedPart struct {
 }
 
 func (h *Handler) completeMultipartUpload(req *request) error {
-	b, err := h.ownedBucket(req)
+	b, err := h.loadBucket(req.ctx, req.bucket)
 	if err != nil {
+		return err
+	}
+	if err := h.authorizeWrite(req, b, req.key, "s3:PutObject"); err != nil {
 		return err
 	}
 	u, err := h.loadUpload(req, req.r.URL.Query().Get("uploadId"))
@@ -398,11 +409,15 @@ func setResultChecksum(r *completeResult, algo, v string) {
 }
 
 func (h *Handler) abortMultipartUpload(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	b, err := h.loadBucket(req.ctx, req.bucket)
+	if err != nil {
+		return err
+	}
+	if err := h.authorizeWrite(req, b, req.key, "s3:AbortMultipartUpload"); err != nil {
 		return err
 	}
 	id := req.r.URL.Query().Get("uploadId")
-	err := h.st.Update(req.ctx, func(tx *store.Tx) error {
+	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_uploads WHERE upload_id = ? AND bucket = ? AND key = ?`, id, req.bucket, req.key)
 		if err != nil {
 			return err
@@ -443,7 +458,7 @@ type partItem struct {
 }
 
 func (h *Handler) listParts(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:ListMultipartUploadParts", permRead); err != nil {
 		return err
 	}
 	q := req.r.URL.Query()
@@ -528,7 +543,7 @@ type uploadItem struct {
 // listMultipartUploads lists in-progress uploads in (key, initiated) order.
 // Delimiter roll-up and upload-id-marker are basic for now (M2 finishes them).
 func (h *Handler) listMultipartUploads(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:ListBucketMultipartUploads", permRead); err != nil {
 		return err
 	}
 	q := req.r.URL.Query()

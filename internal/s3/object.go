@@ -51,8 +51,10 @@ type objectRow struct {
 	Blob         string
 	Parts        []partRef // multipart objects: the part blobs, in order
 	LastModified time.Time
-	Owner        string
+	Owner        string // account ID
 	Meta         objectMeta
+	ACL          *acl
+	Tags         []tag
 }
 
 // loadObject returns the current version of req.key, or the given version.
@@ -60,20 +62,21 @@ type objectRow struct {
 // version, 405 MethodNotAllowed when addressed by version ID, both with
 // x-amz-delete-marker set.
 func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error) {
-	q := `SELECT key, version_id, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
-		WHERE bucket = ? AND key = ? AND is_latest = 1`
+	const cols = `SELECT o.key, o.version_id, o.delete_marker, o.size, o.etag, o.blob, o.parts_json, o.last_modified, o.owner,
+		o.meta_json, o.acl, o.tagging, COALESCE(a.canonical_id, o.owner)
+		FROM s3_objects o LEFT JOIN accounts a ON a.id = o.owner`
+	q := cols + ` WHERE o.bucket = ? AND o.key = ? AND o.is_latest = 1`
 	args := []any{req.bucket, req.key}
 	if versionID != "" {
-		q = `SELECT key, version_id, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json FROM s3_objects
-			WHERE bucket = ? AND key = ? AND version_id = ?`
+		q = cols + ` WHERE o.bucket = ? AND o.key = ? AND o.version_id = ?`
 		args = append(args, versionID)
 	}
 	var o objectRow
 	var lm int64
 	var marker int
-	var meta, parts string
+	var meta, parts, aclJSON, tagJSON, ownerCanonical string
 	err := h.st.DB().QueryRowContext(req.ctx, q, args...).
-		Scan(&o.Key, &o.VersionID, &marker, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta)
+		Scan(&o.Key, &o.VersionID, &marker, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta, &aclJSON, &tagJSON, &ownerCanonical)
 	if errors.Is(err, sql.ErrNoRows) {
 		if versionID != "" {
 			return nil, errNoSuchVersion(req.bucket, req.key)
@@ -94,6 +97,8 @@ func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error)
 		return nil, e
 	}
 	o.LastModified = msTime(lm)
+	o.ACL = parseStoredACL(aclJSON, ownerCanonical)
+	o.Tags = parseStoredTags(tagJSON)
 	if err := json.Unmarshal([]byte(meta), &o.Meta); err != nil {
 		return nil, err
 	}
@@ -193,8 +198,11 @@ func (h *Handler) ingest(req *request, defaultAlgo string) (*ingested, error) {
 }
 
 func (h *Handler) putObject(req *request) error {
-	b, err := h.ownedBucket(req)
+	b, err := h.loadBucket(req.ctx, req.bucket)
 	if err != nil {
+		return err
+	}
+	if err := h.authorizeWrite(req, b, req.key, "s3:PutObject"); err != nil {
 		return err
 	}
 	if len(req.key) > maxKeyLength {
@@ -203,6 +211,14 @@ func (h *Handler) putObject(req *request) error {
 	meta, merr := metaFromRequest(req.r)
 	if merr != nil {
 		return merr
+	}
+	owner, objACL, err := h.newObjectOwnership(req, b)
+	if err != nil {
+		return err
+	}
+	tags, err := tagsFromHeader(req.r)
+	if err != nil {
+		return err
 	}
 	in, err := h.ingest(req, "CRC64NVME") // S3's default integrity checksum
 	if err != nil {
@@ -216,6 +232,7 @@ func (h *Handler) putObject(req *request) error {
 	etag := `"` + hex.EncodeToString(in.pending.MD5) + `"`
 	vid, err := h.writeObject(req, objectRow{
 		Key: req.key, Size: in.pending.Size, ETag: etag, Blob: in.pending.SHA256, Meta: meta,
+		Owner: owner, ACL: objACL, Tags: tags,
 	})
 	if err != nil {
 		return err
@@ -339,18 +356,11 @@ var responseOverrides = map[string]string{
 }
 
 func (h *Handler) getObject(req *request, head bool) error {
-	b, err := h.ownedBucket(req)
+	b, o, err := h.objectForRead(req, "s3:GetObject", permRead)
 	if err != nil {
 		return err
 	}
-	vid, err := versionParam(req)
-	if err != nil {
-		return err
-	}
-	o, err := h.loadObject(req, vid)
-	if err != nil {
-		return err
-	}
+	vid, _ := versionParam(req)
 	r, w := req.r, req.w
 	q := r.URL.Query()
 	if _, ok := q["partNumber"]; ok {
@@ -384,6 +394,9 @@ func (h *Handler) getObject(req *request, head bool) error {
 	}
 	if o.Meta.StorageClass != "" {
 		hdr.Set("x-amz-storage-class", o.Meta.StorageClass)
+	}
+	if len(o.Tags) > 0 {
+		hdr.Set("x-amz-tagging-count", strconv.Itoa(len(o.Tags)))
 	}
 	for param, header := range responseOverrides {
 		if v, ok := q[param]; ok {
@@ -561,4 +574,30 @@ func readSmallBody(req *request, limit int64, requireIntegrity bool) ([]byte, er
 		}
 	}
 	return body, nil
+}
+
+// newObjectOwnership decides who owns an object being written and its ACL,
+// following the bucket's object ownership setting and public access block.
+func (h *Handler) newObjectOwnership(req *request, b *bucketInfo) (ownerAcct string, a *acl, err error) {
+	ownerAcct, ownerCanon := req.account(), req.canonical()
+	canned := req.r.Header.Get("X-Amz-Acl")
+	switch {
+	case b.Ownership == ownershipOwnerEnforced,
+		b.Ownership == ownershipOwnerPreferred && canned == cannedBucketOwnerFullCtl:
+		ownerAcct, ownerCanon = b.Account, b.OwnerCanonical
+	}
+	a, err = h.aclFromRequest(req.ctx, req.r, ownerCanon, b.OwnerCanonical)
+	if err != nil {
+		return "", nil, err
+	}
+	if a == nil {
+		return ownerAcct, nil, nil // default: private to the owner
+	}
+	if b.Ownership == ownershipOwnerEnforced && !a.onlyOwner() {
+		return "", nil, errACLNotSupported()
+	}
+	if a.isPublic() && b.PAB.BlockPublicAcls {
+		return "", nil, errAccessDenied()
+	}
+	return ownerAcct, a, nil
 }

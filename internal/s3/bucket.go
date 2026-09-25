@@ -63,6 +63,24 @@ func (h *Handler) createBucket(req *request) error {
 	if strings.EqualFold(req.r.Header.Get("X-Amz-Bucket-Object-Lock-Enabled"), "true") {
 		return errNotImplemented("object lock")
 	}
+	ownership := ownershipObjectWriter
+	if v := req.r.Header.Get("X-Amz-Object-Ownership"); v != "" {
+		if !validOwnership(v) {
+			return errInvalidArgument("Invalid x-amz-object-ownership header: %s", v)
+		}
+		ownership = v
+	}
+	bucketACL, err := h.aclFromRequest(req.ctx, req.r, req.canonical(), req.canonical())
+	if err != nil {
+		return err
+	}
+	aclJSON := ""
+	if bucketACL != nil {
+		if ownership == ownershipOwnerEnforced && !bucketACL.onlyOwner() {
+			return errf(400, "InvalidBucketAclWithObjectOwnership", "Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting")
+		}
+		aclJSON = bucketACL.json()
+	}
 	body, err := io.ReadAll(io.LimitReader(req.r.Body, 64<<10))
 	if err != nil {
 		return err
@@ -91,8 +109,8 @@ func (h *Handler) createBucket(req *request) error {
 			return err
 		}
 		if _, err := tx.ExecContext(req.ctx, `
-			INSERT INTO s3_buckets(name, account_id, region, location_constraint, created, hlc) VALUES (?, ?, ?, ?, ?, ?)`,
-			req.bucket, req.who.Account.ID, h.region, cfg.LocationConstraint, tx.HLC().WallMs(), int64(tx.HLC())); err != nil {
+			INSERT INTO s3_buckets(name, account_id, region, location_constraint, created, hlc, acl, ownership) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			req.bucket, req.who.Account.ID, h.region, cfg.LocationConstraint, tx.HLC().WallMs(), int64(tx.HLC()), aclJSON, ownership); err != nil {
 			return err
 		}
 		return tx.Change("s3", "CreateBucket", req.bucket, map[string]string{
@@ -113,15 +131,15 @@ func (h *Handler) headBucket(req *request) error {
 		return err
 	}
 	req.w.Header().Set("x-amz-bucket-region", b.Region)
-	if req.who == nil || req.who.Account.ID != b.Account {
-		return errAccessDenied()
+	if err := h.authorizeBucket(req, b, "s3:ListBucket", permRead, nil); err != nil {
+		return err
 	}
 	req.w.WriteHeader(http.StatusOK)
 	return nil
 }
 
 func (h *Handler) deleteBucket(req *request) error {
-	if _, err := h.ownedBucket(req); err != nil {
+	if _, err := h.bucketAccess(req, "s3:DeleteBucket", ""); err != nil {
 		return err
 	}
 	err := h.st.Update(req.ctx, func(tx *store.Tx) error {
@@ -236,7 +254,7 @@ type locationConstraint struct {
 }
 
 func (h *Handler) getBucketLocation(req *request) error {
-	b, err := h.ownedBucket(req)
+	b, err := h.bucketAccess(req, "s3:GetBucketLocation", "")
 	if err != nil {
 		return err
 	}
@@ -251,7 +269,7 @@ type versioningConfiguration struct {
 }
 
 func (h *Handler) getBucketVersioning(req *request) error {
-	b, err := h.ownedBucket(req)
+	b, err := h.bucketAccess(req, "s3:GetBucketVersioning", "")
 	if err != nil {
 		return err
 	}
