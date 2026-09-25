@@ -2,3 +2,4 @@
 # milestone says so; removing one is a human decision (the loop reverts removals).
 s3
 smoke-s3
+ddb
