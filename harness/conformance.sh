@@ -20,6 +20,9 @@ source "$(dirname "$0")/lib.sh"
 SUITE="${1:-}"; shift || true
 [ -n "$SUITE" ] || die "usage: harness/conformance.sh SUITE [--quiet] [--nodes FILE] [pytest args...]"
 QUIET=0; NODES=""
+# Report node ids are relative to pytest's --rootdir; a suite that runs from
+# a subdirectory sets NODE_PREFIX so --nodes can strip it (ddb).
+NODE_PREFIX=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1; shift ;;
@@ -48,7 +51,7 @@ run_pytest() {
   local -a extra=("$@")
   if [ -n "$NODES" ]; then
     tests=()
-    while IFS= read -r n; do [ -n "$n" ] && tests+=("$n"); done <"$NODES"
+    while IFS= read -r n; do [ -n "$n" ] && tests+=("${n#"$NODE_PREFIX"}"); done <"$NODES"
   fi
   (cd "$workdir" && run_with_timeout "$SUITE_TIMEOUT" \
       "$venv/bin/python" -m pytest "${PYTEST_COMMON[@]}" "${extra[@]}" "${USER_ARGS[@]}" "${tests[@]}") \
@@ -103,6 +106,7 @@ suite_ddb() {
   CASS_DRIVER_NO_EXTENSIONS=1 ensure_venv "ddb-${ALTERNATOR_SHA:0:8}" boto3 "pytest<8.4" pytest-timeout pytest-reportlog requests cassandra-driver allure-pytest \
     aiohttp colorama humanfriendly packaging psutil treelib universalasync pyyaml || return 3
   start_citadel $port "$OUT.server.log" || return $?
+  NODE_PREFIX="test/alternator/"   # ids are relative to --rootdir, pytest runs in test/alternator
   AWS_CONFIG_FILE=/dev/null run_pytest "$H/venv/ddb-${ALTERNATOR_SHA:0:8}" "$H/cache/alternator/test/alternator" \
     "${DDB_FILES[@]}" -- --url "http://127.0.0.1:$port" -c "$ROOT/harness/alternator.ini" \
     --rootdir "$H/cache/alternator" --confcutdir "$H/cache/alternator/test/alternator"

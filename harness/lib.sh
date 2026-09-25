@@ -65,6 +65,7 @@ build_citadel() {
 }
 
 CITADEL_PID=""
+CITADEL_DATA=""   # the throwaway data dir of the running region; stop_citadel deletes it
 # usage: start_citadel PORT LOGFILE  (fresh data dir every time)
 start_citadel() {
   local port=$1 logfile=$2
@@ -74,10 +75,9 @@ start_citadel() {
       log "On macOS this is usually AirPlay Receiver: System Settings > General > AirDrop & Handoff > AirPlay Receiver = off."
     return 3
   fi
-  local data
-  data="$H/data/conformance-$port-$$"
-  rm -rf "$data"; mkdir -p "$data"
-  "$H/bin/citadel" serve --region tuchanka-1 --listen "127.0.0.1:$port" --data "$data" \
+  CITADEL_DATA="$H/data/conformance-$port-$$"
+  rm -rf "$CITADEL_DATA"; mkdir -p "$CITADEL_DATA"
+  "$H/bin/citadel" serve --region tuchanka-1 --listen "127.0.0.1:$port" --data "$CITADEL_DATA" \
     --bootstrap "$ROOT/harness/bootstrap.json" --conformance --log text >"$logfile" 2>&1 &
   CITADEL_PID=$!
 
@@ -98,6 +98,9 @@ stop_citadel() {
     wait "$CITADEL_PID" 2>/dev/null
   fi
   CITADEL_PID=""
+  # Throwaway region data (~200 MB per s3 run) would otherwise fill the disk.
+  if [ -n "$CITADEL_DATA" ]; then rm -rf "$CITADEL_DATA"; fi
+  CITADEL_DATA=""
 }
 
 # ---- pinned upstream test suites -----------------------------------------------

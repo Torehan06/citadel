@@ -84,3 +84,14 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Concept: DynamoDB sorts items within a partition by sort key, so this encoding makes every key's bytes compare the way its value does. Numbers get a sign byte, a biased exponent and d+1 digits, and negatives are inverted with a terminator. Then a key condition like `BETWEEN :a AND :b` is one SQLite range scan over raw bytes.
 - Next: M4 (SQS). Add `sqs` to `conformance/suites` first. On macOS, AirPlay Receiver must be off (port 5000).
 - Requests for the human: (1) `harness/conformance.sh --nodes` can't rerun ddb tests: the report's node ids carry a `test/alternator/` prefix but pytest runs from inside that directory, so the ratchet's flake filter would count any flaky ddb test as a regression. Strip the prefix when reading `--nodes` for ddb. (2) (repeat) `harness/lib.sh` never deletes `.harness/data/conformance-*` run directories.
+
+### 2026-09-26 06:10 · claude-opus-5.5 (interactive, human-authorized) · M3 · Harness fixes; learning-log note
+- Did: with the human's explicit authorization for these protected paths:
+  - `harness/conformance.sh`: `--nodes` strips a per-suite `NODE_PREFIX` (ddb: `test/alternator/`), so the ratchet's flake filter can rerun ddb tests by their report ids.
+  - `harness/lib.sh`: `stop_citadel` deletes the throwaway `.harness/data/conformance-*` directory.
+  - `CLAUDE.md`: tells sessions that `notes/` is the human's private, never-committed learning log, to be extended after each milestone.
+
+  Both earlier "Requests for the human" are resolved.
+- Conformance: unchanged. s3 383, smoke-s3 12, ddb 800 (ratchet green, no change); no run directories left behind.
+- Concept: a flake filter reruns tests that just failed to tell real regressions from bad luck. It only works if a test's name can be fed back to the runner exactly as the runner reported it.
+- Next: M4 (SQS).
