@@ -31,7 +31,7 @@ Goal: the S3 surface everyday tools touch.
 - [ ] Multipart upload (create, upload part, upload part copy, list parts, complete, abort, list uploads), stored as a part manifest with no byte copying
 - [ ] CopyObject (metadata directives), conditional requests (If-Match / If-None-Match / If-Modified-Since, conditional writes)
 - [ ] Object metadata, content headers, response-header overrides, checksums returned with ChecksumMode
-- [ ] Versioning: version IDs, delete markers, ListObjectVersions
+- [x] Versioning: version IDs, delete markers, ListObjectVersions
 - [ ] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
 - [ ] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
 - [ ] Blob garbage collection (refcounts + sweeper)

@@ -29,3 +29,11 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Conformance: unchanged, s3 189, smoke-s3 12 (ratchet green, no change).
 - Concept: a conformance suite is a test suite written by someone else against the real service (Ceph's s3-tests, Scylla's Alternator tests, moto). Passing it shows compatibility we can't fake by writing our own tests.
 - Next: M2, starting with versioning (see the entry above).
+
+### 2026-09-25 23:30 · claude-opus-5.5 (interactive) · M2 · Versioning
+- Did: PutBucketVersioning; PUT/DELETE follow the bucket state (fresh version IDs when Enabled, the replaceable "null" version when unversioned or Suspended); delete markers (GET/HEAD 404 or 405 with `x-amz-delete-marker`); DELETE ?versionId promotes the next newest version; version-aware DeleteObjects and ListObjectVersions. CreateBucket on a bucket you own answers 200 for requests addressed to us-east-1 without a constraint (S3's legacy rule; s3-tests' `_create_objects` relies on it) and 409 BucketAlreadyOwnedByYou otherwise.
+- Conformance: s3 189 → 210, smoke-s3 12 → 12.
+- Decisions: PutObject in a Suspended bucket returns no `x-amz-version-id` (s3-tests asserts this); GET/HEAD in any versioned bucket do return it. `test_delete_marker_nonversioned` expects `x-amz-delete-marker: false` on a plain 404, which AWS doesn't document, so it's left red.
+- Concept: S3 versioning never overwrites. Every write adds a version and "delete" just stacks a delete marker on top, so the key looks gone while every byte stays recoverable until someone deletes a specific version ID.
+- Next: ACLs + bucket policy (~70 failing tests), then CopyObject/UploadPartCopy.
+- Requests for the human: `harness/lib.sh` `start_citadel` creates `.harness/data/conformance-<port>-<pid>` per run and nothing ever deletes it. At ~200 MB per s3 run this filled the disk tonight (ratchet went RED with "no space left on device"). Please `rm -rf "$data"` in `stop_citadel` (or on EXIT in conformance.sh). Until then I clear those dirs before each ratchet.
