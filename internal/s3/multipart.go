@@ -200,9 +200,6 @@ func (h *Handler) uploadPart(req *request) error {
 		return err
 	}
 	q := req.r.URL.Query()
-	if req.r.Header.Get("X-Amz-Copy-Source") != "" {
-		return errNotImplemented("UploadPartCopy")
-	}
 	n, err := strconv.Atoi(q.Get("partNumber"))
 	if err != nil || n < 1 || n > maxPartNumber {
 		return errInvalidArgument("Part number must be an integer between 1 and 10000, inclusive")
@@ -210,6 +207,9 @@ func (h *Handler) uploadPart(req *request) error {
 	u, err := h.loadUpload(req, q.Get("uploadId"))
 	if err != nil {
 		return err
+	}
+	if req.r.Header.Get("X-Amz-Copy-Source") != "" {
+		return h.uploadPartCopy(req, u, n)
 	}
 	in, err := h.ingest(req, u.Meta.ChecksumAlgo)
 	if err != nil {
@@ -220,22 +220,7 @@ func (h *Handler) uploadPart(req *request) error {
 		return err
 	}
 	etag := `"` + hex.EncodeToString(in.pending.MD5) + `"`
-	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
-		res, err := tx.ExecContext(req.ctx, `
-			INSERT INTO s3_parts(upload_id, part_number, size, etag, blob, checksum, last_modified)
-			SELECT upload_id, ?, ?, ?, ?, ?, ? FROM s3_uploads WHERE upload_id = ?
-			ON CONFLICT(upload_id, part_number) DO UPDATE SET size=excluded.size, etag=excluded.etag,
-				blob=excluded.blob, checksum=excluded.checksum, last_modified=excluded.last_modified`,
-			n, in.pending.Size, etag, in.pending.SHA256, in.checksum, tx.HLC().WallMs(), u.ID)
-		if err != nil {
-			return err
-		}
-		if c, _ := res.RowsAffected(); c == 0 {
-			return errNoSuchUpload() // aborted or completed while the part streamed in
-		}
-		return tx.Change("s3", "UploadPart", req.bucket+"/"+req.key, map[string]any{"upload": u.ID, "part": n, "blob": in.pending.SHA256})
-	})
-	if err != nil {
+	if err := h.savePart(req, u, n, in.pending, etag, in.checksum); err != nil {
 		return err
 	}
 	req.w.Header().Set("ETag", etag)
@@ -244,6 +229,26 @@ func (h *Handler) uploadPart(req *request) error {
 	}
 	req.w.WriteHeader(http.StatusOK)
 	return nil
+}
+
+// savePart records a committed part blob, replacing an earlier upload of the
+// same part number.
+func (h *Handler) savePart(req *request, u *upload, n int, p *store.Pending, etag, checksum string) error {
+	return h.st.Update(req.ctx, func(tx *store.Tx) error {
+		res, err := tx.ExecContext(req.ctx, `
+			INSERT INTO s3_parts(upload_id, part_number, size, etag, blob, checksum, last_modified)
+			SELECT upload_id, ?, ?, ?, ?, ?, ? FROM s3_uploads WHERE upload_id = ?
+			ON CONFLICT(upload_id, part_number) DO UPDATE SET size=excluded.size, etag=excluded.etag,
+				blob=excluded.blob, checksum=excluded.checksum, last_modified=excluded.last_modified`,
+			n, p.Size, etag, p.SHA256, checksum, tx.HLC().WallMs(), u.ID)
+		if err != nil {
+			return err
+		}
+		if c, _ := res.RowsAffected(); c == 0 {
+			return errNoSuchUpload() // aborted or completed while the part streamed in
+		}
+		return tx.Change("s3", "UploadPart", req.bucket+"/"+req.key, map[string]any{"upload": u.ID, "part": n, "blob": p.SHA256})
+	})
 }
 
 type completeRequest struct {

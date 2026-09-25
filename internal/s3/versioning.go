@@ -162,6 +162,9 @@ func writeObjectTx(req *request, tx *store.Tx, o objectRow) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := checkWriteConditions(req, tx, o.Key); err != nil {
+		return "", err
+	}
 	o.VersionID = nullVersion
 	if state == versioningEnabled {
 		o.VersionID = newVersionID()

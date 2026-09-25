@@ -258,7 +258,7 @@ func metaFromRequest(r *http.Request) (objectMeta, *Error) {
 		}
 	}
 	// aws-chunked is a transfer detail, not part of the object's encoding.
-	if ce, ok := m.Headers["Content-Encoding"]; ok {
+	if ce, ok := m.Headers["Content-Encoding"]; ok && strings.Contains(strings.ToLower(ce), "aws-chunked") {
 		var keep []string
 		for _, p := range strings.Split(ce, ",") {
 			if p = strings.TrimSpace(p); p != "" && !strings.EqualFold(p, "aws-chunked") {
@@ -268,7 +268,7 @@ func metaFromRequest(r *http.Request) (objectMeta, *Error) {
 		if len(keep) == 0 {
 			delete(m.Headers, "Content-Encoding")
 		} else {
-			m.Headers["Content-Encoding"] = strings.Join(keep, ",")
+			m.Headers["Content-Encoding"] = strings.Join(keep, ", ")
 		}
 	}
 	total := 0

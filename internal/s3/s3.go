@@ -202,7 +202,7 @@ func (h *Handler) objectOp(req *request, sub string) error {
 		switch m {
 		case http.MethodPut:
 			if req.r.Header.Get("X-Amz-Copy-Source") != "" {
-				return errNotImplemented("CopyObject")
+				return h.copyObject(req)
 			}
 			return h.putObject(req)
 		case http.MethodGet, http.MethodHead:
