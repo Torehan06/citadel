@@ -28,9 +28,9 @@ Exit: all 12 `smoke-s3` steps pass except `put-multipart`, `get-multipart` and `
 
 ## M2 — Real S3
 Goal: the S3 surface everyday tools touch.
-- [ ] Multipart upload (create, upload part, upload part copy, list parts, complete, abort, list uploads), stored as a part manifest with no byte copying
-- [ ] CopyObject (metadata directives), conditional requests (If-Match / If-None-Match / If-Modified-Since, conditional writes)
-- [ ] Object metadata, content headers, response-header overrides, checksums returned with ChecksumMode
+- [x] Multipart upload (create, upload part, upload part copy, list parts, complete, abort, list uploads), stored as a part manifest with no byte copying
+- [x] CopyObject (metadata directives), conditional requests (If-Match / If-None-Match / If-Modified-Since, conditional writes)
+- [x] Object metadata, content headers, response-header overrides, checksums returned with ChecksumMode
 - [x] Versioning: version IDs, delete markers, ListObjectVersions
 - [ ] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
 - [x] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
