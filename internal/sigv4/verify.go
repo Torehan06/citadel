@@ -168,7 +168,7 @@ func requestTime(r *http.Request) (time.Time, string, *Error) {
 		return t, s, nil
 	}
 	if s := r.Header.Get("Date"); s != "" {
-		t, err := http.ParseTime(s)
+		t, err := parseHTTPDate(s)
 		if err != nil {
 			return time.Time{}, "", errorf(403, "AccessDenied", "AWS authentication requires a valid Date or x-amz-date header")
 		}
@@ -385,3 +385,12 @@ func (h *hashCheckReader) Read(p []byte) (int, error) {
 }
 
 func (h *hashCheckReader) Close() error { return h.r.Close() }
+
+// parseHTTPDate accepts the HTTP date formats plus RFC 1123 with a numeric
+// zone ("Fri, 24 May 2013 00:00:00 -0000"), which botocore sends in Date.
+func parseHTTPDate(s string) (time.Time, error) {
+	if t, err := http.ParseTime(s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC1123Z, s)
+}

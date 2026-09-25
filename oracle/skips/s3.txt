@@ -3,3 +3,8 @@
 # Skipped tests still run and still count if they pass; this only hides them
 # from the "what to work on" list. Every edit here shows up in the morning
 # report for review.
+s3tests/functional/test_headers.py::test_object_create_bad_authorization_none    # hook removes Authorization before signing; botocore re-signs, so the request is valid (fails on any server)
+s3tests/functional/test_headers.py::test_object_create_bad_authorization_empty   # same: signer replaces the emptied Authorization header
+s3tests/functional/test_headers.py::test_bucket_create_bad_authorization_none    # same as test_object_create_bad_authorization_none
+s3tests/functional/test_headers.py::test_bucket_create_bad_authorization_empty   # same as test_object_create_bad_authorization_empty
+s3tests/functional/test_headers.py::test_object_create_bad_contentlength_none    # botocore re-adds Content-Length after the before-call hook removes it, so no 411 is possible

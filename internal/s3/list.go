@@ -41,6 +41,9 @@ func successor(p string) string {
 // returned on an earlier page and is skipped.
 func (h *Handler) scan(ctx context.Context, bucket, prefix, delimiter, marker string, maxKeys int) (*listPage, error) {
 	page := &listPage{}
+	if maxKeys == 0 {
+		return page, nil // S3 answers an empty, untruncated page
+	}
 	from := prefix // inclusive lower bound
 	after := marker
 	upper := successor(prefix)
@@ -154,12 +157,26 @@ func parseListParams(q url.Values) (listParams, error) {
 	return p, nil
 }
 
-// enc applies encoding-type=url to a key-like field in a listing response.
+// enc applies encoding-type=url to a key-like field in a listing response:
+// URI encoding with '/' left as is ("quux ab/" -> "quux%20ab/").
 func (p listParams) enc(s string) string {
 	if !p.urlEncode {
 		return s
 	}
-	return strings.ReplaceAll(url.QueryEscape(s), "%2F", "/")
+	const hexdig = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' ||
+			c == '-' || c == '.' || c == '_' || c == '~' || c == '/' {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hexdig[c>>4])
+		b.WriteByte(hexdig[c&15])
+	}
+	return b.String()
 }
 
 type listEntry struct {
@@ -244,7 +261,8 @@ func (h *Handler) listObjectsV1(req *request) error {
 		return err
 	}
 	res := listBucketResultV1{
-		Name: req.bucket, Prefix: p.enc(p.prefix), Marker: p.enc(marker), MaxKeys: p.maxKeys,
+		// V1 returns Prefix as sent: SDKs only URL-decode Delimiter, Marker and NextMarker.
+		Name: req.bucket, Prefix: p.prefix, Marker: p.enc(marker), MaxKeys: p.maxKeys,
 		Delimiter: p.enc(p.delimiter), IsTruncated: page.Truncated,
 	}
 	if p.urlEncode {
@@ -268,7 +286,7 @@ type listBucketResultV2 struct {
 	KeyCount              int            `xml:"KeyCount"`
 	Delimiter             string         `xml:"Delimiter,omitempty"`
 	IsTruncated           bool           `xml:"IsTruncated"`
-	ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
+	ContinuationToken     *string        `xml:"ContinuationToken"`
 	NextContinuationToken string         `xml:"NextContinuationToken,omitempty"`
 	StartAfter            string         `xml:"StartAfter,omitempty"`
 	Contents              []listEntry    `xml:"Contents"`
@@ -288,9 +306,9 @@ func (h *Handler) listObjectsV2(req *request) error {
 	startAfter := q.Get("start-after")
 	marker := startAfter
 	token, hasToken := q["continuation-token"]
-	if hasToken {
+	if hasToken && strings.Join(token, "") != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(strings.Join(token, ""))
-		if err != nil || len(token[0]) == 0 {
+		if err != nil {
 			return errInvalidArgument("The continuation token provided is incorrect")
 		}
 		marker = string(raw)
@@ -305,7 +323,8 @@ func (h *Handler) listObjectsV2(req *request) error {
 		KeyCount: len(page.Objects) + len(page.Prefixes),
 	}
 	if hasToken {
-		res.ContinuationToken = strings.Join(token, "")
+		t := strings.Join(token, "")
+		res.ContinuationToken = &t
 	}
 	if page.Truncated {
 		res.NextContinuationToken = base64.RawURLEncoding.EncodeToString([]byte(page.Next))

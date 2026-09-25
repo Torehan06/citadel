@@ -113,7 +113,10 @@ func (h *Handler) putObject(req *request) error {
 	if req.auth.Streaming {
 		size = req.auth.DecodedLength
 	}
-	if size < 0 {
+	// HTTP/1.1 chunked transfer encoding carries no length up front; the
+	// body is then read to EOF, capped at the single-PUT limit.
+	chunkedTE := size < 0 && len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked"
+	if size < 0 && !chunkedTE {
 		return errf(411, "MissingContentLength", "You must provide the Content-Length HTTP header.")
 	}
 	if size > maxObjectSize {
@@ -147,7 +150,11 @@ func (h *Handler) putObject(req *request) error {
 	if r.Body != nil {
 		body = r.Body
 	}
-	pending, err := h.st.Blobs.Write(&exactReader{r: body, remaining: size}, sum)
+	src := io.Reader(&exactReader{r: body, remaining: size})
+	if chunkedTE {
+		src = http.MaxBytesReader(req.w, r.Body, maxObjectSize)
+	}
+	pending, err := h.st.Blobs.Write(src, sum)
 	if err != nil {
 		return bodyError(err)
 	}
