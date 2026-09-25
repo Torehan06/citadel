@@ -95,3 +95,10 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Conformance: unchanged. s3 383, smoke-s3 12, ddb 800 (ratchet green, no change); no run directories left behind.
 - Concept: a flake filter reruns tests that just failed to tell real regressions from bad luck. It only works if a test's name can be fed back to the runner exactly as the runner reported it.
 - Next: M4 (SQS).
+
+### 2026-09-26 07:00 · claude-opus-5.5 (interactive, human-authorized) · M3 · Public docs made neutral
+- Did: with the human's authorization for protected paths, README, ARCHITECTURE, ROADMAP, CLAUDE.md, the Makefile comment, CI and harness comments now describe regions, budgets and operations generically (a laptop dev region; subscription usage limits; operator voice). The CI cron comment is UTC only. Operator-specific advice moved out of the repository. No behaviour change.
+- Conformance: unchanged. s3 383, smoke-s3 12, ddb 800 (ratchet green, no change).
+- Found: `test_limits.py::test_limit_attribute_length_gsi_lsi_bad_incoherent_names` passes intermittently. CreateTable's schema validation reports whichever problem it meets first, and that depends on Go's map iteration order. It was deliberately left out of the baseline. Fix: validate AttributeDefinitions name lengths before building the definitions map, so the error is deterministic.
+- Concept: documentation in a public repo is read by strangers, so it should state requirements (e.g. "fits on an 8 GB machine") rather than describe one person's setup.
+- Next: M4 (SQS).

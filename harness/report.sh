@@ -47,12 +47,12 @@ if [ -n "$START" ]; then
   fi
 fi
 
-hr "Reverted work (branches you can inspect or delete)"
+hr "Reverted work (branches to inspect or delete)"
 git branch --list 'harness/reverted-*' | tail -10
 [ -z "$(git branch --list 'harness/reverted-*')" ] && echo "(none)"
 
 if [ -f STUCK.md ]; then
-  hr "STUCK.md (the loop will not restart until you delete it)"
+  hr "STUCK.md (the loop will not restart until it is deleted)"
   sed -n '1,12p' STUCK.md
 fi
 
