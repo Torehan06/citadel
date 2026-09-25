@@ -156,6 +156,9 @@ func (h *Handler) serve(r *http.Request) (any, error) {
 	}
 	op, ok := ops[name]
 	if !ok {
+		if !knownOperations[name] {
+			return nil, errf(400, "UnknownOperationException", "")
+		}
 		return nil, errf(501, "NotImplemented", "citadel: DynamoDB %s is not implemented yet", name)
 	}
 	return op(h, &call{ctx: r.Context(), who: p, account: p.Account.ID, body: body})
@@ -179,4 +182,27 @@ func decode(c *call, dst any) error {
 		return errf(400, "SerializationException", "%v", err)
 	}
 	return nil
+}
+
+// knownOperations are DynamoDB's API operations. A real operation Citadel
+// hasn't built answers 501; a name DynamoDB doesn't have is
+// UnknownOperationException, as in DynamoDB.
+var knownOperations = map[string]bool{}
+
+func init() {
+	for _, op := range strings.Fields(`BatchExecuteStatement BatchGetItem BatchWriteItem CreateBackup
+		CreateGlobalTable CreateTable DeleteBackup DeleteItem DeleteResourcePolicy DeleteTable
+		DescribeBackup DescribeContinuousBackups DescribeContributorInsights DescribeEndpoints
+		DescribeExport DescribeGlobalTable DescribeGlobalTableSettings DescribeImport
+		DescribeKinesisStreamingDestination DescribeLimits DescribeTable DescribeTableReplicaAutoScaling
+		DescribeTimeToLive DisableKinesisStreamingDestination EnableKinesisStreamingDestination
+		ExecuteStatement ExecuteTransaction ExportTableToPointInTime GetItem GetResourcePolicy
+		ImportTable ListBackups ListContributorInsights ListExports ListGlobalTables ListImports
+		ListTables ListTagsOfResource PutItem PutResourcePolicy Query RestoreTableFromBackup
+		RestoreTableToPointInTime Scan TagResource TransactGetItems TransactWriteItems UntagResource
+		UpdateContinuousBackups UpdateContributorInsights UpdateGlobalTable UpdateGlobalTableSettings
+		UpdateItem UpdateKinesisStreamingDestination UpdateTable UpdateTableReplicaAutoScaling
+		UpdateTimeToLive`) {
+		knownOperations[op] = true
+	}
 }
