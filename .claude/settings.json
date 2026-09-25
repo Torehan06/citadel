@@ -4,8 +4,8 @@
       "Bash(go *)",
       "Bash(gofmt *)",
       "Bash(make *)",
-      "Bash(harness/oracle.sh *)",
-      "Bash(./harness/oracle.sh *)",
+      "Bash(harness/conformance.sh *)",
+      "Bash(./harness/conformance.sh *)",
       "Bash(harness/report.sh*)",
       "WebFetch(domain:docs.aws.amazon.com)"
     ],

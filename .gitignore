@@ -1,4 +1,4 @@
-# Harness working state: builds, caches, venvs, logs, oracle results
+# Harness working state: builds, caches, venvs, logs, conformance results
 /.harness/
 /data/
 

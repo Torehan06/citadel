@@ -2,7 +2,7 @@
 
 The harness gives agents the first milestone whose heading lacks `[done]`. Each milestone lists what to build, how it's judged, and when it's finished.
 
-Agents may tick checkboxes, add sub-steps, and mark a milestone `[done]` once its exit criteria hold. They may add suites to `oracle/suites` when a milestone says to. Lowering an exit criterion is a human decision, and every edit to this file shows up in the morning report.
+Agents may tick checkboxes, add sub-steps, and mark a milestone `[done]` once its exit criteria hold. They may add suites to `conformance/suites` when a milestone says to. Lowering an exit criterion is a human decision, and every edit to this file shows up in the morning report.
 
 - **Rung 1, "It speaks AWS":** M0–M6
 - **Rung 2, "Terraform believes it":** M7
@@ -10,9 +10,9 @@ Agents may tick checkboxes, add sub-steps, and mark a milestone `[done]` once it
 - **Rung 4, "It hosts itself":** M13–M14
 
 ## M0 — Skeleton [done]
-- [x] `citadel serve` with region, listen, data, bootstrap and oracle flags; `/_citadel/healthz`
+- [x] `citadel serve` with region, listen, data, bootstrap and conformance flags; `/_citadel/healthz`
 - [x] Service detection (SigV4 scope, X-Amz-Target, paths) and 501 NotImplemented in each protocol's error format
-- [x] Oracle runners for s3, smoke-s3, ddb, sqs, iam, lambda, route53; ratchet; night-shift loop; CI
+- [x] Conformance runners for s3, smoke-s3, ddb, sqs, iam, lambda, route53; ratchet; night-shift loop; CI
 
 ## M1 — First bucket [done]
 Goal: `aws s3 cp` works against a single region.
@@ -23,7 +23,7 @@ Start here: every s3-tests test runs **ListBuckets** in its setup fixture. Its t
 - [x] Load bootstrap identities into the store (accounts, canonical IDs, keys)
 - [x] S3: ListBuckets, CreateBucket (incl. LocationConstraint), HeadBucket, DeleteBucket, PutObject, GetObject (+ Range), HeadObject, DeleteObject, DeleteObjects, ListObjects v1/v2 (prefix, delimiter, pagination)
 - [x] S3 error codes and XML exactly as AWS: NoSuchBucket, NoSuchKey, BucketAlreadyOwnedByYou, BucketNotEmpty, InvalidBucketName, SignatureDoesNotMatch, AccessDenied...
-Oracle: `smoke-s3`, `s3`.
+Conformance: `smoke-s3`, `s3`.
 Exit: all 12 `smoke-s3` steps pass except `put-multipart`, `get-multipart` and `sync-roundtrip` (those land in M2); `s3` ≥ 120 passing.
 
 ## M2 — Real S3
@@ -35,7 +35,7 @@ Goal: the S3 surface everyday tools touch.
 - [ ] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
 - [ ] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
 - [ ] Blob garbage collection (refcounts + sweeper)
-Oracle: `smoke-s3`, `s3`.
+Conformance: `smoke-s3`, `s3`.
 Exit: all `smoke-s3` steps pass; `s3` ≥ 300 passing (about 60% of the selection).
 
 ## M3 — DynamoDB
@@ -48,7 +48,7 @@ Goal: tables, items, and the expression language.
 - [ ] Query / Scan: pagination (ExclusiveStartKey), Limit, Select, segments (parallel scan)
 - [ ] GSIs and LSIs, BatchGetItem / BatchWriteItem, TransactGetItems / TransactWriteItems, TTL config, tags
 - [ ] Size and limit validation (400 KB items, key sizes, nesting depth)
-Oracle: add `ddb` to `oracle/suites` when you start this milestone.
+Conformance: add `ddb` to `conformance/suites` when you start this milestone.
 Exit: `ddb` ≥ 450 passing.
 
 ## M4 — SQS
@@ -58,7 +58,7 @@ Exit: `ddb` ≥ 450 passing.
 - [ ] Redrive policy / DLQ, message retention
 - [ ] FIFO: dedup (content-based and explicit), message groups, ordering
 - [ ] Queue URLs as `http://<host>/<account>/<name>`. moto's tests expect account 123456789012.
-Oracle: add `sqs` to `oracle/suites`.
+Conformance: add `sqs` to `conformance/suites`.
 Exit: `sqs` ≥ 110 passing.
 
 ## M5 — IAM and STS
@@ -66,7 +66,7 @@ Exit: `sqs` ≥ 110 passing.
 - [ ] Users, groups, roles, access keys, managed and inline policies, attachments, instance-profile stubs Terraform needs
 - [ ] STS: GetCallerIdentity, AssumeRole (temporary `ASIA…` keys + session tokens understood by `internal/sigv4`)
 - [ ] Policy evaluation (identity + resource policies, explicit deny, common condition operators), enforced for S3, DynamoDB and SQS actions
-Oracle: add `iam` to `oracle/suites`.
+Conformance: add `iam` to `conformance/suites`.
 Exit: `iam` ≥ 150 passing; no `s3` or `ddb` regressions from enforcement.
 
 ## M6 — Lambda on WebAssembly
@@ -76,7 +76,7 @@ Exit: `iam` ≥ 150 passing; no `s3` or `ddb` regressions from enforcement.
 - [ ] Log streams under `/aws/lambda/<fn>` (minimal CloudWatch Logs API: DescribeLogStreams, GetLogEvents, FilterLogEvents)
 - [ ] SQS event source mappings; S3 event notifications to Lambda and SQS (from the change log)
 - [ ] `examples/functions/hello-go` (GOOS=wasip1) and a smoke step: `aws lambda invoke` returns its payload
-Oracle: add `lambda` to `oracle/suites`.
+Conformance: add `lambda` to `conformance/suites`.
 Exit: `lambda` ≥ 45 passing (the Docker-based invoke tests stay red, which is expected); the hello-go smoke passes; an SQS message triggers the function within 2 s.
 
 ## M7 — Terraform believes it
@@ -111,7 +111,7 @@ Exit: from the dev laptop, `aws --endpoint-url http://palaven-1:8420 s3 ls` work
 ## M11 — Global DNS and failover
 - [ ] Authoritative DNS (miekg/dns) on the Linux regions; Route 53 API subset (hosted zones, change batches, health checks, failover routing)
 - [ ] Tailscale split DNS for `citadel.internal`
-Oracle: add `route53` to `oracle/suites`.
+Conformance: add `route53` to `conformance/suites`.
 Exit: `route53` ≥ 45 passing; with `s3.citadel.internal` failover records, stopping the primary region moves resolution to the secondary within 60 s.
 
 ## M12 — Canaries and SLOs

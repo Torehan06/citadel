@@ -5,7 +5,7 @@ LDFLAGS := -X main.version=$(VERSION)
 # The three region platforms: tuchanka-1 (laptop, darwin/arm64), palaven-1 (Oracle ARM), thessia-1 (Codespace).
 TARGETS := darwin/arm64 linux/arm64 linux/amd64
 
-.PHONY: check vet test cross build serve oracle ratchet loop report clean
+.PHONY: check vet test cross build serve conformance ratchet loop report clean
 
 ## check: everything an agent must pass before committing (vet, tests, all three platforms build)
 check: vet test cross
@@ -34,9 +34,9 @@ serve: build
 	$(BIN)/citadel serve --region tuchanka-1 --listen 127.0.0.1:8420 --data .harness/data/dev \
 		--bootstrap harness/bootstrap.json --log text
 
-## oracle: run one oracle suite, e.g. make oracle SUITE=s3 ARGS="-k test_bucket_list_empty"
-oracle:
-	@harness/oracle.sh $(SUITE) $(ARGS)
+## conformance: run one conformance suite, e.g. make conformance SUITE=s3 ARGS="-k test_bucket_list_empty"
+conformance:
+	@harness/conformance.sh $(SUITE) $(ARGS)
 
 ratchet:
 	@harness/ratchet.sh

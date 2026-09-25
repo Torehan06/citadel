@@ -1,7 +1,7 @@
-# The independent referee: re-runs every enabled oracle suite on GitHub's
-# machines and fails if anything in oracle/baseline stopped passing.
+# The independent referee: re-runs every enabled conformance suite on GitHub's
+# machines and fails if anything in conformance/baseline stopped passing.
 # It never raises baselines; only the loop does that, from a green local run.
-name: oracle
+name: conformance
 on:
   push:
     branches: [main]
@@ -27,7 +27,7 @@ jobs:
           path: |
             .harness/cache
             .harness/venv
-          key: oracle-${{ hashFiles('oracle/pins.env', 'harness/oracle.sh') }}
+          key: conformance-${{ hashFiles('conformance/pins.env', 'harness/conformance.sh') }}
       - name: ratchet (check only)
         run: |
           set +e
@@ -38,7 +38,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oracle-results
+          name: conformance-results
           path: |
             .harness/results/*.pass
             .harness/results/*.fail

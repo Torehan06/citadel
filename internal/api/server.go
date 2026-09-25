@@ -19,10 +19,10 @@ type Config struct {
 	DataDir   string
 	Version   string
 	Bootstrap *bootstrap.File
-	// Oracle enables test-only endpoints (e.g. moto's /moto-api/reset).
+	// Conformance enables test-only endpoints (e.g. moto's /moto-api/reset).
 	// Never set it on a real region.
-	Oracle bool
-	Logger *slog.Logger
+	Conformance bool
+	Logger      *slog.Logger
 }
 
 type Server struct {
@@ -54,7 +54,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, r)
 		return
 	}
-	if s.cfg.Oracle && strings.HasPrefix(r.URL.Path, "/moto-api/") {
+	if s.cfg.Conformance && strings.HasPrefix(r.URL.Path, "/moto-api/") {
 		s.motoAPI(w, r)
 		return
 	}

@@ -55,7 +55,7 @@ func serve(args []string) error {
 	listen := fs.String("listen", "127.0.0.1:8420", "address to listen on")
 	dataDir := fs.String("data", "./data", "data directory (metadata db + blobs)")
 	bootPath := fs.String("bootstrap", "", "bootstrap identities file (JSON)")
-	oracle := fs.Bool("oracle", false, "enable test-only endpoints used by oracle suites")
+	conformance := fs.Bool("conformance", false, "enable test-only endpoints used by conformance suites")
 	logFormat := fs.String("log", "json", "log format: json or text")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -104,7 +104,7 @@ func serve(args []string) error {
 
 	srv := api.New(api.Config{
 		Region: *region, DataDir: *dataDir, Version: version,
-		Bootstrap: boot, Oracle: *oracle, Logger: logger,
+		Bootstrap: boot, Conformance: *conformance, Logger: logger,
 	})
 	srv.Handle(api.SvcS3, s3.New(st, verifier, *region, logger))
 
@@ -119,7 +119,7 @@ func serve(args []string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", *listen, "data", *dataDir, "oracle", *oracle, "version", version)
+		logger.Info("listening", "addr", *listen, "data", *dataDir, "conformance", *conformance, "version", version)
 		errCh <- httpSrv.ListenAndServe()
 	}()
 

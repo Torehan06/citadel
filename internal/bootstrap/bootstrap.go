@@ -1,6 +1,6 @@
 // Package bootstrap loads the static identities a region starts with.
 //
-// Every oracle suite signs requests with fixed test keys (s3-tests, moto,
+// Every conformance suite signs requests with fixed test keys (s3-tests, moto,
 // alternator). The bootstrap file seeds those keys so a fresh data directory
 // can serve the suites immediately. Real multi-region identity lives in the
 // control plane (see ARCHITECTURE.md, "Identity"); this file only seeds it.

@@ -12,25 +12,25 @@ You're working on **Citadel**, a small AWS-compatible cloud (see ARCHITECTURE.md
 
 ```
 make check                                   # gofmt + vet + unit tests + build for darwin/arm64, linux/arm64, linux/amd64
-harness/oracle.sh s3 -k test_bucket_list     # targeted oracle run: short tracebacks + server log path
-harness/oracle.sh s3 --quiet                 # full suite, one-line summary (slow; the harness runs it after you anyway)
+harness/conformance.sh s3 -k test_bucket_list     # targeted conformance run: short tracebacks + server log path
+harness/conformance.sh s3 --quiet                 # full suite, one-line summary (slow; the harness runs it after you anyway)
 make serve                                   # dev region on 127.0.0.1:8420 (the aws CLI is preconfigured via harness/aws.config)
 AWS_CONFIG_FILE=harness/aws.config AWS_SHARED_CREDENTIALS_FILE=harness/aws.credentials aws s3 ls
 ```
 
-Oracle results live in `.harness/results/`:
+Conformance results live in `.harness/results/`:
 - `<suite>.fail` and `<suite>.todo` list the failing tests.
 - `<suite>.server.log` is Citadel's log for that run. Grep it rather than reading it whole.
 - `targeted-<suite>.pytest.log` has the full output of your last targeted run.
 
 ## How to work
 
-- **Oracles are the spec.** Before implementing an operation, read the failing test's source in `.harness/cache/` (`s3-tests/`, `alternator/test/alternator/`, `moto/tests/`) and the AWS API reference (docs.aws.amazon.com). Match AWS, not the test's implementation details. When AWS and a test disagree, AWS wins. Note it in PROGRESS.md and in your commit message.
+- **Conformance suites are the spec.** Before implementing an operation, read the failing test's source in `.harness/cache/` (`s3-tests/`, `alternator/test/alternator/`, `moto/tests/`) and the AWS API reference (docs.aws.amazon.com). Match AWS, not the test's implementation details. When AWS and a test disagree, AWS wins. Note it in PROGRESS.md and in your commit message.
 - **Implement behaviour generally.** Never special-case test fixtures: bucket prefixes like `citadel-`, test names, the moto account ID, or known keys. Code that passes a test by recognising it is cheating. The human reviews for it.
 - **Unimplemented operations return 501 NotImplemented** in the service's error envelope (`internal/api/errors.go`). Never 500 for "not built yet": SDKs retry 500s, and that slows every run.
 - **Stream, don't buffer.** Object bodies go through `io.Reader`s to disk. The process should stay under 256 MiB.
 - **Pure Go only.** `CGO_ENABLED=0` must build all three targets (`make check` verifies it). Use the standard library first. A new dependency needs a sentence in PROGRESS.md explaining why. Pre-approved: `modernc.org/sqlite`, `github.com/tetratelabs/wazero`, `github.com/miekg/dns`.
-- **Tests.** Add table-driven unit tests next to the code for parsers, encoders, and anything with edge cases. They support the oracles and never replace them.
+- **Tests.** Add table-driven unit tests next to the code for parsers, encoders, and anything with edge cases. They support the conformance suites and never replace them.
 - **Schema.** Add a new numbered migration. Never edit a migration that's already committed.
 - **Keep the tree flat.** Follow the package map in ARCHITECTURE.md §12. No new top-level directories without a reason written down.
 - **Save tokens.** Don't print whole large files or full suite outputs. Use `grep`, `head`, `tail`, and `-k` targeted runs.
@@ -43,14 +43,14 @@ Oracle results live in `.harness/results/`:
 
 ## Protected paths: the harness reverts your whole session if you change them
 
-`harness/`, `oracle/baseline/`, `oracle/pins.env`, `.github/`, `.claude/`, `AGENTS.md`, `CLAUDE.md`, `Makefile`, and removing lines from `oracle/suites`.
+`harness/`, `conformance/baseline/`, `conformance/pins.env`, `.github/`, `.claude/`, `AGENTS.md`, `CLAUDE.md`, `Makefile`, and removing lines from `conformance/suites`.
 
-If you need one of them changed (a new smoke step, a dependency in an oracle runner), write the request under **Requests for the human** in your PROGRESS.md entry.
+If you need one of them changed (a new smoke step, a dependency in an conformance runner), write the request under **Requests for the human** in your PROGRESS.md entry.
 
 You *may*:
-- add a suite to `oracle/suites` when the milestone says to;
+- add a suite to `conformance/suites` when the milestone says to;
 - tick checkboxes and mark milestones `[done]` in ROADMAP.md once the exit criteria hold;
-- add entries to `oracle/skips/<suite>.txt` with a reason, for tests that check non-AWS behaviour (RGW-only error text, Scylla-only features). Skips are reviewed every morning. Skipping a test because it's hard is not a valid reason.
+- add entries to `conformance/skips/<suite>.txt` with a reason, for tests that check non-AWS behaviour (RGW-only error text, Scylla-only features). Skips are reviewed every morning. Skipping a test because it's hard is not a valid reason.
 
 ## Hard nos
 
@@ -64,7 +64,7 @@ You *may*:
 ```
 ### YYYY-MM-DD HH:MM · <agent> · M<n> · <one-line summary>
 - Did: what changed, in 1–3 bullets
-- Oracle: before → after (e.g. s3 112 → 131), or "groundwork, unit tests only"
+- Conformance: before → after (e.g. s3 112 → 131), or "groundwork, unit tests only"
 - Concept: one or two plain sentences on the AWS or systems idea behind the change, for a human reader (e.g. how SigV4 derives a signing key)
 - Next: the most sensible next step
 - Requests for the human: (only if needed)

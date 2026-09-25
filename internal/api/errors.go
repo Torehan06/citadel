@@ -7,10 +7,10 @@ import (
 )
 
 // Each AWS protocol family has its own error shape. SDKs parse these shapes to
-// raise typed exceptions, so getting them wrong makes every oracle test fail
+// raise typed exceptions, so getting them wrong makes every conformance test fail
 // in confusing ways. Unimplemented operations answer 501 NotImplemented
 // immediately: SDKs do not retry 501, while a 500 would trigger retries with
-// backoff and make oracle runs crawl.
+// backoff and make conformance runs crawl.
 
 type s3Error struct {
 	XMLName   xml.Name `xml:"Error"`

@@ -23,3 +23,9 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Concept: a multipart ETag is not an MD5 of the object. It's the MD5 of the concatenated binary part MD5s plus "-N", which is why clients can't check a multipart download against its ETag and S3 added flexible checksums.
 - Next: M2. The biggest failing families are object lock (39), POST object (36, browser uploads), copy (17+), bucket policy (16+), ACLs, and versioning. Versioning changes the objects table semantics most, so start there. Blobs of overwritten/deleted objects and aborted parts are still unreferenced until the M2 sweeper exists.
 - Requests for the human: none.
+
+### 2026-09-25 22:40 · claude-opus-5.5 (interactive, human-authorized) · M1 · Rename "oracle" to "conformance"
+- Did: renamed the concept repo-wide with `git mv` (history kept): `oracle/` → `conformance/`, `harness/oracle.sh` → `harness/conformance.sh`, `.github/workflows/oracle.yml` → `conformance.yml`, `make oracle` → `make conformance`, and `citadel serve --oracle` / `api.Config.Oracle` → `--conformance` / `Conformance`. The human explicitly authorized these protected-path edits for this task. Baseline files are byte-identical. Earlier PROGRESS entries keep the old word; "Oracle Cloud" (palaven-1's provider) is a company name and stays.
+- Conformance: unchanged, s3 189, smoke-s3 12 (ratchet green, no change).
+- Concept: a conformance suite is a test suite written by someone else against the real service (Ceph's s3-tests, Scylla's Alternator tests, moto). Passing it shows compatibility we can't fake by writing our own tests.
+- Next: M2, starting with versioning (see the entry above).

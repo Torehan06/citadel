@@ -1,4 +1,4 @@
-# Oracle suites the ratchet runs, one per line. Agents may ADD a suite when a
+# Conformance suites the ratchet runs, one per line. Agents may ADD a suite when a
 # milestone says so; removing one is a human decision (the loop reverts removals).
 s3
 smoke-s3

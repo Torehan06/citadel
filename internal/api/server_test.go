@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-func newTestServer(oracle bool) *httptest.Server {
-	s := New(Config{Region: "tuchanka-1", Version: "test", Oracle: oracle,
+func newTestServer(conformance bool) *httptest.Server {
+	s := New(Config{Region: "tuchanka-1", Version: "test", Conformance: conformance,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	return httptest.NewServer(s)
 }
@@ -109,20 +109,20 @@ func TestUnimplementedJSONProtocol(t *testing.T) {
 	}
 }
 
-func TestMotoResetOnlyInOracleMode(t *testing.T) {
-	for _, oracle := range []bool{false, true} {
-		ts := newTestServer(oracle)
+func TestMotoResetOnlyInConformanceMode(t *testing.T) {
+	for _, conformance := range []bool{false, true} {
+		ts := newTestServer(conformance)
 		res, err := http.Post(ts.URL+"/moto-api/reset", "application/json", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		res.Body.Close()
 		ts.Close()
-		if oracle && res.StatusCode != 200 {
-			t.Fatalf("oracle mode: reset returned %d", res.StatusCode)
+		if conformance && res.StatusCode != 200 {
+			t.Fatalf("conformance mode: reset returned %d", res.StatusCode)
 		}
-		if !oracle && res.StatusCode == 200 {
-			t.Fatal("reset endpoint must not exist outside oracle mode")
+		if !conformance && res.StatusCode == 200 {
+			t.Fatal("reset endpoint must not exist outside conformance mode")
 		}
 	}
 }

@@ -8,7 +8,7 @@
 #   harness/loop.sh --models sonnet          one night on a different chain (comma-separated, best first)
 #   harness/loop.sh --model claude-opus-5-5 --effort high    pin one exact model and raise effort
 #   harness/loop.sh --agent codex            use Codex CLI (ChatGPT plan) instead
-#   harness/loop.sh --push                   push after every green session (CI runs the oracles too)
+#   harness/loop.sh --push                   push after every green session (CI runs the conformance suites too)
 #   harness/loop.sh --yolo                   skip permission checks: ONLY inside a disposable Linux VM/container
 #
 # Options: --subagent-model M  --max-iters N  --max-turns N  --session-minutes N  --strikes N  --cooldown SECONDS
@@ -131,15 +131,15 @@ ratchet() {
 note "baseline ratchet"
 ratchet start; rc=$?
 case $rc in
-  0) git add oracle/baseline && git commit -q -m "ratchet: baseline $(grep -E '^[a-z0-9-]+: [0-9]+ passing' "$H/ratchet.last" | cut -d' ' -f1-3 | paste -sd, -)" && note "baselines raised before starting" ;;
+  0) git add conformance/baseline && git commit -q -m "ratchet: baseline $(grep -E '^[a-z0-9-]+: [0-9]+ passing' "$H/ratchet.last" | cut -d' ' -f1-3 | paste -sd, -)" && note "baselines raised before starting" ;;
   1) # make sure every enabled suite has a committed (possibly empty) baseline file
-     for s in $(grep -vE '^[[:space:]]*(#|$)' oracle/suites | awk '{print $1}'); do
-       [ -f "oracle/baseline/$s.txt" ] || : >"oracle/baseline/$s.txt"
+     for s in $(grep -vE '^[[:space:]]*(#|$)' conformance/suites | awk '{print $1}'); do
+       [ -f "conformance/baseline/$s.txt" ] || : >"conformance/baseline/$s.txt"
      done
-     git add oracle/baseline
+     git add conformance/baseline
      git diff --cached --quiet || git commit -q -m "ratchet: add empty baselines" ;;
   2) cat "$H/ratchet.last" >&2; die "the tree is RED before the night starts; fix it first" ;;
-  3) cat "$H/ratchet.last" >&2; die "oracle infrastructure problem; see $NIGHT/ratchet-start.log" ;;
+  3) cat "$H/ratchet.last" >&2; die "conformance infrastructure problem; see $NIGHT/ratchet-start.log" ;;
 esac
 
 # ---- prompt rendering ----------------------------------------------------------------
@@ -156,7 +156,7 @@ todo_families() {
   python3 - "$H/results" <<'EOF'
 import sys, os, re, collections
 res = sys.argv[1]
-suites = [l.split()[0] for l in open("oracle/suites") if l.strip() and not l.lstrip().startswith("#")]
+suites = [l.split()[0] for l in open("conformance/suites") if l.strip() and not l.lstrip().startswith("#")]
 for s in suites:
     p = os.path.join(res, f"{s}.todo")
     if not os.path.exists(p):
@@ -294,33 +294,33 @@ while :; do
     note "session $iter ($TAG): no commits (strike $strikes/$STRIKES_MAX)"
   else
     # mechanical anti-cheat: the scoreboard belongs to the human
-    touched=$(git diff --name-only "$START" HEAD -- harness oracle/baseline oracle/pins.env .github .claude AGENTS.md CLAUDE.md Makefile)
-    removed_suite=$(git diff "$START" HEAD -- oracle/suites | grep -E '^-[^-]' || true)
+    touched=$(git diff --name-only "$START" HEAD -- harness conformance/baseline conformance/pins.env .github .claude AGENTS.md CLAUDE.md Makefile)
+    removed_suite=$(git diff "$START" HEAD -- conformance/suites | grep -E '^-[^-]' || true)
     if [ -n "$touched$removed_suite" ]; then
       git branch -f "harness/reverted-s$iter-$(date +%m%d%H%M)" HEAD
       git reset -q --hard "$START"
       strikes=$((strikes + 1))
-      PREV_NOTE="REVERTED: the previous session modified protected paths ($(echo "$touched" | tr '\n' ' ')${removed_suite:+oracle/suites removal}). Those belong to the human. Work around them or write the request in PROGRESS.md."
+      PREV_NOTE="REVERTED: the previous session modified protected paths ($(echo "$touched" | tr '\n' ' ')${removed_suite:+conformance/suites removal}). Those belong to the human. Work around them or write the request in PROGRESS.md."
       note "session $iter ($TAG): REVERTED for touching protected paths: $(echo "$touched" | tr '\n' ' ') (strike $strikes/$STRIKES_MAX)"
     else
-      skipdiff=$(git diff --stat "$START" HEAD -- oracle/skips ROADMAP.md | tail -1)
+      skipdiff=$(git diff --stat "$START" HEAD -- conformance/skips ROADMAP.md | tail -1)
       [ -n "$skipdiff" ] && note "session $iter ($TAG): changed skip lists or ROADMAP, review: $skipdiff"
       ratchet "s$iter"; rrc=$?
       summary=$(grep -E '^[a-z0-9-]+: [0-9]+ passing' "$H/ratchet.last" | paste -sd';' -)
       case $rrc in
         0)
-          git add oracle/baseline && git commit -q -m "ratchet: $summary"
+          git add conformance/baseline && git commit -q -m "ratchet: $summary"
           strikes=0
           PREV_NOTE="The previous session was kept and improved the numbers: $summary"
           note "session $iter ($TAG): IMPROVED ($commits commits) $summary" ;;
         1)
           unit_after=$(cat "$H/unit.count" 2>/dev/null || echo 0)
           if [ "$unit_after" -gt "$unit_before" ]; then
-            PREV_NOTE="The previous session was kept: green, oracle unchanged, unit tests $unit_before -> $unit_after (groundwork)."
+            PREV_NOTE="The previous session was kept: green, conformance unchanged, unit tests $unit_before -> $unit_after (groundwork)."
             note "session $iter ($TAG): kept, groundwork (unit tests $unit_before -> $unit_after)"
           else
             strikes=$((strikes + 1))
-            PREV_NOTE="The previous session was kept but moved no number (oracle and unit tests unchanged). Aim at a failing oracle test this time."
+            PREV_NOTE="The previous session was kept but moved no number (conformance and unit tests unchanged). Aim at a failing conformance test this time."
             note "session $iter ($TAG): kept, but no measurable progress (strike $strikes/$STRIKES_MAX)"
           fi ;;
         2)
@@ -333,7 +333,7 @@ $(tail -20 "$H/ratchet.last")
 Try a smaller or different approach."
           note "session $iter ($TAG): REVERTED (regression/red), saved on $branch (strike $strikes/$STRIKES_MAX)" ;;
         3)
-          notify "oracle infrastructure failing; stopping (tree left at session $iter's commits)"
+          notify "conformance infrastructure failing; stopping (tree left at session $iter's commits)"
           break ;;
       esac
       if [ $PUSH = 1 ] && [ $rrc -le 1 ]; then

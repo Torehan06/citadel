@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# The ratchet: oracle numbers only go up.
+# The ratchet: conformance numbers only go up.
 #
 #   harness/ratchet.sh               run everything, raise baselines on improvement
 #   harness/ratchet.sh --check-only  compare only, never write (CI uses this)
 #
 # 1. vet + 3-platform build + unit tests must pass.
-# 2. Every suite in oracle/suites runs; its pass set is compared with
-#    oracle/baseline/<suite>.txt. Tests that stopped passing are re-run once
+# 2. Every suite in conformance/suites runs; its pass set is compared with
+#    conformance/baseline/<suite>.txt. Tests that stopped passing are re-run once
 #    (flake filter); still failing = regression.
 #
 # Exit: 0 improved   1 green, unchanged   2 red (check failed / regression)   3 infra
@@ -37,11 +37,11 @@ UNIT=$(grep -cE '^[[:space:]]*--- PASS' "$H/results/unit.log" || true)
 echo "$UNIT" >"$H/unit.count"
 say "unit tests: $UNIT passing"
 
-# ---- 2. oracle suites -------------------------------------------------------------
-SUITES=$(grep -vE '^[[:space:]]*(#|$)' "$ROOT/oracle/suites" 2>/dev/null | awk '{print $1}')
-[ -n "$SUITES" ] || { say "no suites enabled in oracle/suites"; exit 1; }
+# ---- 2. conformance suites -------------------------------------------------------------
+SUITES=$(grep -vE '^[[:space:]]*(#|$)' "$ROOT/conformance/suites" 2>/dev/null | awk '{print $1}')
+[ -n "$SUITES" ] || { say "no suites enabled in conformance/suites"; exit 1; }
 
-md "## Citadel oracle scoreboard"
+md "## Citadel conformance scoreboard"
 md ""
 md "| suite | passing | baseline | change |"
 md "|---|---:|---:|---:|"
@@ -51,8 +51,8 @@ for s in $SUITES; do
   # compare against a sorted private copy: the ratchet never touches the
   # committed baseline except to raise it at the very end
   base="$H/results/$s.base"
-  if [ -f "$ROOT/oracle/baseline/$s.txt" ]; then sort "$ROOT/oracle/baseline/$s.txt" >"$base"; else : >"$base"; fi
-  out=$("$ROOT/harness/oracle.sh" "$s" --quiet 2>&1); rc=$?
+  if [ -f "$ROOT/conformance/baseline/$s.txt" ]; then sort "$ROOT/conformance/baseline/$s.txt" >"$base"; else : >"$base"; fi
+  out=$("$ROOT/harness/conformance.sh" "$s" --quiet 2>&1); rc=$?
   case $rc in
     0) ;;
     1) say "RED: $out"; exit 2 ;;
@@ -67,7 +67,7 @@ for s in $SUITES; do
   flaky=0
   if [ "$lost" -gt 0 ]; then
     # flake filter: re-run exactly the lost tests once
-    "$ROOT/harness/oracle.sh" "$s" --quiet --nodes "$lost_f" >/dev/null 2>&1
+    "$ROOT/harness/conformance.sh" "$s" --quiet --nodes "$lost_f" >/dev/null 2>&1
     if [ -f "$H/results/targeted-$s.pass" ]; then
       sort -o "$H/results/targeted-$s.pass" "$H/results/targeted-$s.pass"
       comm -23 "$lost_f" "$H/results/targeted-$s.pass" >"$lost_f.still"
@@ -90,7 +90,7 @@ for s in $SUITES; do
   fi
   [ "$gained" -gt 0 ] && improved=1
   # candidates for the next session: failing, not on the human-approved skip list
-  skips="$ROOT/oracle/skips/$s.txt"
+  skips="$ROOT/conformance/skips/$s.txt"
   if [ -f "$skips" ]; then
     grep -vE '^[[:space:]]*(#|$)' "$skips" | awk '{print $1}' | sort >"$H/results/$s.skipids"
     comm -23 <(sort "$H/results/$s.fail") "$H/results/$s.skipids" >"$H/results/$s.todo"
@@ -105,7 +105,7 @@ if [ $infra = 1 ]; then say "RESULT: INFRA (some suites did not run)"; exit 3; f
 if [ $improved = 0 ]; then say "RESULT: green, no change"; exit 1; fi
 if [ $CHECK_ONLY = 0 ]; then
   for s in $SUITES; do
-    sort -u "$H/results/$s.base" "$H/results/$s.pass" -o "$ROOT/oracle/baseline/$s.txt"
+    sort -u "$H/results/$s.base" "$H/results/$s.pass" -o "$ROOT/conformance/baseline/$s.txt"
   done
   say "RESULT: improved, baselines raised"
 else

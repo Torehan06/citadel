@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Run one oracle suite against a fresh, throwaway Citadel region.
+# Run one conformance suite against a fresh, throwaway Citadel region.
 #
-#   harness/oracle.sh s3                           full suite -> .harness/results/s3.{pass,fail,skip}
-#   harness/oracle.sh s3 -k test_bucket_list_empty targeted run, short tracebacks (for agents)
-#   harness/oracle.sh s3 --quiet                   full run, one-line summary (used by ratchet)
-#   harness/oracle.sh s3 --nodes FILE              run exactly the node ids listed in FILE
+#   harness/conformance.sh s3                           full suite -> .harness/results/s3.{pass,fail,skip}
+#   harness/conformance.sh s3 -k test_bucket_list_empty targeted run, short tracebacks (for agents)
+#   harness/conformance.sh s3 --quiet                   full run, one-line summary (used by ratchet)
+#   harness/conformance.sh s3 --nodes FILE              run exactly the node ids listed in FILE
 #
 # Suites: s3 (ceph/s3-tests), smoke-s3 (aws CLI round trips), ddb (Scylla
 # Alternator's DynamoDB tests), sqs / iam / lambda / route53 (moto's tests in
@@ -18,7 +18,7 @@
 source "$(dirname "$0")/lib.sh"
 
 SUITE="${1:-}"; shift || true
-[ -n "$SUITE" ] || die "usage: harness/oracle.sh SUITE [--quiet] [--nodes FILE] [pytest args...]"
+[ -n "$SUITE" ] || die "usage: harness/conformance.sh SUITE [--quiet] [--nodes FILE] [pytest args...]"
 QUIET=0; NODES=""
 while [ $# -gt 0 ]; do
   case "$1" in

@@ -41,14 +41,14 @@ This document is the contract agents build against. Sections are self-contained,
 ```
 
 - All traffic stays on the tailnet. The one optional public surface is the read-only status page through Tailscale Funnel.
-- GitHub Actions (free for public repos) is the fourth, non-region machine. It runs the oracle suites as an independent referee.
+- GitHub Actions (free for public repos) is the fourth, non-region machine. It runs the conformance suites as an independent referee.
 
 ---
 
 ## 3. Principles
 
 1. **Wire-compatible or nothing.** If AWS has an API for it, we speak that API byte for byte (status codes, error codes, XML/JSON shapes, header names). We never invent a parallel API for something AWS already does.
-2. **Oracles decide, not opinions.** A feature is done when an upstream test suite or a real client says so (§11). Agent-written tests support the oracles but never replace them.
+2. **Conformance suites decide, not opinions.** A feature is done when an upstream test suite or a real client says so (§11). Agent-written tests support the conformance suites but never replace them.
 3. **One static binary per region.** `CGO_ENABLED=0`, all services in one process, cross-compiled to all three platforms. No external database, no containers required.
 4. **Static stability.** A region's data plane keeps serving reads and writes when every other region, including the home region, is unreachable. Cross-region work is asynchronous and retried.
 5. **Small and legible.** Standard library first. Every dependency has to justify itself in PROGRESS.md. A human should be able to open `meta.db` in DataGrip and understand the schema.
@@ -74,15 +74,15 @@ This document is the contract agents build against. Sections are self-contained,
 | Lambda | REST-JSON | `/2015-03-31/functions/...` |
 | Route 53 | REST-XML | `/2013-04-01/hostedzone/...` |
 
-**Errors.** Each protocol has its own error envelope (`internal/api/errors.go`), and SDKs parse these to raise typed exceptions. Operations that don't exist yet answer **501 NotImplemented** at once. SDKs don't retry 501. A 500 would trigger retries with backoff and slow every oracle run to a crawl.
+**Errors.** Each protocol has its own error envelope (`internal/api/errors.go`), and SDKs parse these to raise typed exceptions. Operations that don't exist yet answer **501 NotImplemented** at once. SDKs don't retry 501. A 500 would trigger retries with backoff and slow every conformance run to a crawl.
 
-**Internal endpoints** live under `/_citadel/` (not a valid bucket name): `healthz`, `metrics`, and later the replication APIs. With `--oracle`, the region also serves moto's `/moto-api/reset`. It must wipe all service state and do nothing else.
+**Internal endpoints** live under `/_citadel/` (not a valid bucket name): `healthz`, `metrics`, and later the replication APIs. With `--conformance`, the region also serves moto's `/moto-api/reset`. It must wipe all service state and do nothing else.
 
 ---
 
 ## 5. Identity and authentication
 
-- **Accounts** are 12-digit IDs. Each has an S3 canonical ID (for ACL `Owner.ID`) and IAM users with access keys. `harness/bootstrap.json` seeds the test identities that every oracle suite uses.
+- **Accounts** are 12-digit IDs. Each has an S3 canonical ID (for ACL `Owner.ID`) and IAM users with access keys. `harness/bootstrap.json` seeds the test identities that every conformance suite uses.
 - **SigV4 verification** (`internal/sigv4`) must handle:
   - the `Authorization` header and presigned query parameters;
   - `UNSIGNED-PAYLOAD`;
@@ -214,7 +214,7 @@ Global state covers accounts, users, keys, roles, policies, the region registry,
 
 ---
 
-## 11. Oracles
+## 11. Conformance suites
 
 | Suite | Upstream | What it judges | Enabled at |
 |---|---|---|---|
@@ -227,7 +227,7 @@ Global state covers accounts, users, keys, roles, policies, the region registry,
 | `route53` | moto's Route 53 tests in server mode | Route 53 API | M11 |
 | Terraform | `examples/terraform/*`: `apply`, then `plan -detailed-exitcode` must report no changes, then `destroy` | Every resource reads back exactly as written | M7 |
 
-Suites are pinned by commit (`oracle/pins.env`). `harness/ratchet.sh` keeps the passing set per suite in `oracle/baseline/`, and that set can only grow. See AGENTS.md for the rules and README.md for the loop.
+Suites are pinned by commit (`conformance/pins.env`). `harness/ratchet.sh` keeps the passing set per suite in `conformance/baseline/`, and that set can only grow. See AGENTS.md for the rules and README.md for the loop.
 
 ---
 
@@ -262,5 +262,5 @@ Keep this map flat: one package per service, with subpackages only when a piece 
 | D3 | wazero instead of wasmtime or microVMs | Pure Go (no cgo), no KVM needed, millisecond cold starts | we need real Linux-binary Lambdas |
 | D4 | Dispatch on SigV4 credential scope | Signed requests say their own service. Avoids fragile guesses between S3 and JSON/query APIs that share `POST /`. | never |
 | D5 | Home-region control plane, not Raft | Two of three nodes are flaky. Same shape as AWS IAM and Route 53. | three always-on nodes exist |
-| D6 | Real `hashicorp/aws` Terraform provider with custom `endpoints`, not a custom provider | The provider reads every attribute back, so "clean plan after apply" is a very strict oracle, and we write no provider code | never |
-| D7 | Oracles pinned, ratchet owned by the harness, not by agents | Agents optimise whatever number they can edit | never |
+| D6 | Real `hashicorp/aws` Terraform provider with custom `endpoints`, not a custom provider | The provider reads every attribute back, so "clean plan after apply" is a very strict conformance test, and we write no provider code | never |
+| D7 | Conformance suites pinned, ratchet owned by the harness, not by agents | Agents optimise whatever number they can edit | never |

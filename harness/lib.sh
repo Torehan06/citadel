@@ -75,10 +75,10 @@ start_citadel() {
     return 3
   fi
   local data
-  data="$H/data/oracle-$port-$$"
+  data="$H/data/conformance-$port-$$"
   rm -rf "$data"; mkdir -p "$data"
   "$H/bin/citadel" serve --region tuchanka-1 --listen "127.0.0.1:$port" --data "$data" \
-    --bootstrap "$ROOT/harness/bootstrap.json" --oracle --log text >"$logfile" 2>&1 &
+    --bootstrap "$ROOT/harness/bootstrap.json" --conformance --log text >"$logfile" 2>&1 &
   CITADEL_PID=$!
 
   for _ in $(seq 1 50); do
@@ -101,8 +101,8 @@ stop_citadel() {
 }
 
 # ---- pinned upstream test suites -----------------------------------------------
-# shellcheck source=../oracle/pins.env
-source "$ROOT/oracle/pins.env"
+# shellcheck source=../conformance/pins.env
+source "$ROOT/conformance/pins.env"
 
 # usage: fetch_pinned NAME URL SHA [sparse dirs...]
 fetch_pinned() {
@@ -119,7 +119,7 @@ fetch_pinned() {
   echo "$sha" >"$dir/.pinned"
 }
 
-# Oracle suites need Python >= 3.11 (Alternator's tests use enum.StrEnum).
+# Conformance suites need Python >= 3.11 (Alternator's tests use enum.StrEnum).
 # macOS ships 3.9, so prefer a Homebrew python if one is installed.
 if [ -z "${PYTHON:-}" ]; then
   for p in python3.13 python3.12 python3.11 python3; do have "$p" && { PYTHON=$p; break; }; done

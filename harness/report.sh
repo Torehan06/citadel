@@ -40,10 +40,10 @@ if [ -n "$START" ]; then
   [ "$(git rev-list --count "$START..HEAD")" = 0 ] && echo "(none)"
 
   hr "Review these: skip-list and roadmap edits by agents"
-  if git diff --quiet "$START" HEAD -- oracle/skips ROADMAP.md; then
+  if git diff --quiet "$START" HEAD -- conformance/skips ROADMAP.md; then
     echo "(none)"
   else
-    git diff "$START" HEAD -- oracle/skips ROADMAP.md | head -80
+    git diff "$START" HEAD -- conformance/skips ROADMAP.md | head -80
   fi
 fi
 

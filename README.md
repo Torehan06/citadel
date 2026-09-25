@@ -16,7 +16,7 @@ Each night, `harness/loop.sh` runs a few agent sessions back to back. Every sess
 
 1. **Auto-commit.** Uncommitted leftovers are auto-committed, so no work is lost to a turn limit.
 2. **Protected paths.** If the session touched the harness, the baselines, CI, or the agent rules, its work is reverted. The scoreboard belongs to you.
-3. **The ratchet** (`harness/ratchet.sh`) runs: gofmt, vet, and unit tests; a build for all three platforms; then every enabled **oracle suite**. The oracle suites are other people's test suites for the real AWS APIs:
+3. **The ratchet** (`harness/ratchet.sh`) runs: gofmt, vet, and unit tests; a build for all three platforms; then every enabled **conformance suite**. The conformance suites are other people's test suites for the real AWS APIs:
    - Ceph's s3-tests
    - Scylla's DynamoDB tests
    - moto's SQS/IAM/Lambda/Route 53 tests
@@ -44,12 +44,12 @@ Create a **public** GitHub repo (public repos get free Actions minutes, includin
 git remote add origin git@github.com:<you>/citadel.git && git push -u origin main
 ```
 
-Sanity check. The first oracle run downloads the pinned suites and builds venvs once:
+Sanity check. The first conformance run downloads the pinned suites and builds venvs once:
 
 ```bash
 make check
-harness/oracle.sh s3          # expect "s3: 0 passed, 494 failed": the stub answers NotImplemented to everything
-harness/oracle.sh smoke-s3    # expect 0/12
+harness/conformance.sh s3          # expect "s3: 0 passed, 494 failed": the stub answers NotImplemented to everything
+harness/conformance.sh smoke-s3    # expect 0/12
 ```
 
 Start the shift:
@@ -126,7 +126,7 @@ harness/loop.sh --model claude-opus-5-5 --effort high    # pinned model, more th
 ```
 cmd/citadel/        the binary
 internal/           api (front door) and bootstrap exist; services arrive milestone by milestone
-harness/            loop, ratchet, oracle runners, smoke tests, model config (loop.env), agent settings (protected)
-oracle/             suite pins, enabled suites, baselines (protected), skip lists (reviewed)
-.github/workflows/  ci (3 platforms) and oracle (independent referee)
+harness/            loop, ratchet, conformance runners, smoke tests, model config (loop.env), agent settings (protected)
+conformance/             suite pins, enabled suites, baselines (protected), skip lists (reviewed)
+.github/workflows/  ci (3 platforms) and conformance (independent referee)
 ```

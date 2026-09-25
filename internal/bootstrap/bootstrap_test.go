@@ -12,7 +12,7 @@ func TestRepoBootstrapFileIsValid(t *testing.T) {
 		t.Fatal(err)
 	}
 	if f.KeyCount() < 5 {
-		t.Fatalf("expected the oracle keys to be present, got %d keys", f.KeyCount())
+		t.Fatalf("expected the conformance-suite keys to be present, got %d keys", f.KeyCount())
 	}
 }
 

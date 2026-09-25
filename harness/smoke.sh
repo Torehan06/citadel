@@ -2,9 +2,9 @@
 # End-to-end smoke checks with the real aws CLI v2 (its defaults - SigV4,
 # aws-chunked uploads with trailing CRC checksums, multipart above 8 MiB -
 # are exactly what everyday clients send). Prints "PASS id" / "FAIL id" lines.
-# Called by harness/oracle.sh smoke-<name>; CITADEL_ENDPOINT is set there.
+# Called by harness/conformance.sh smoke-<name>; CITADEL_ENDPOINT is set there.
 source "$(dirname "$0")/lib.sh"
-EP="${CITADEL_ENDPOINT:?set by oracle.sh}"
+EP="${CITADEL_ENDPOINT:?set by conformance.sh}"
 WHAT="${1:-s3}"
 TMP="$(mktemp -d "$H/smoke.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
