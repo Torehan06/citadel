@@ -18,6 +18,9 @@ import (
 
 	"citadel/internal/api"
 	"citadel/internal/bootstrap"
+	"citadel/internal/s3"
+	"citadel/internal/sigv4"
+	"citadel/internal/store"
 )
 
 // version is set at build time: -ldflags "-X main.version=$(git describe --always)".
@@ -83,10 +86,27 @@ func serve(args []string) error {
 		logger.Info("bootstrap loaded", "accounts", len(b.Accounts), "keys", b.KeyCount())
 	}
 
+	st, err := store.Open(context.Background(), *dataDir, *region)
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer st.Close()
+	if err := st.SeedIdentities(context.Background(), boot); err != nil {
+		return fmt.Errorf("seed identities: %w", err)
+	}
+	verifier := &sigv4.Verifier{Lookup: func(ctx context.Context, accessKey string) (string, error) {
+		secret, _, err := st.LookupKey(ctx, accessKey)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", sigv4.ErrUnknownKey
+		}
+		return secret, err
+	}}
+
 	srv := api.New(api.Config{
 		Region: *region, DataDir: *dataDir, Version: version,
 		Bootstrap: boot, Oracle: *oracle, Logger: logger,
 	})
+	srv.Handle(api.SvcS3, s3.New(st, verifier, *region, logger))
 
 	httpSrv := &http.Server{
 		Addr:              *listen,
