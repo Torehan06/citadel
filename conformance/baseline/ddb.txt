@@ -478,6 +478,7 @@ test/alternator/test_manual_requests.py::test_keep_alive[False]
 test/alternator/test_manual_requests.py::test_keep_alive[True]
 test/alternator/test_manual_requests.py::test_put_item_return_type
 test/alternator/test_manual_requests.py::test_too_large_request
+test/alternator/test_manual_requests.py::test_unknown_operation
 test/alternator/test_manual_requests.py::test_write_malformed_value[BatchWriteItem]
 test/alternator/test_manual_requests.py::test_write_malformed_value[PutItem]
 test/alternator/test_manual_requests.py::test_write_malformed_value[UpdateItem]
