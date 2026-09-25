@@ -102,3 +102,11 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Found: `test_limits.py::test_limit_attribute_length_gsi_lsi_bad_incoherent_names` passes intermittently. CreateTable's schema validation reports whichever problem it meets first, and that depends on Go's map iteration order. It was deliberately left out of the baseline. Fix: validate AttributeDefinitions name lengths before building the definitions map, so the error is deterministic.
 - Concept: documentation in a public repo is read by strangers, so it should state requirements (e.g. "fits on an 8 GB machine") rather than describe one person's setup.
 - Next: M4 (SQS).
+
+### 2026-09-26 07:10 · Codex · M4 · SQS execution plan and baseline
+- Did: enabled sqs before its first ratchet. Continuing from completed M3 with no rewrites. This session follows the human's explicit instruction to finish M4 and push on the current branch, overriding the unattended single-step/no-push defaults.
+- Plan: (1) migration 0007, authenticated JSON/query adapters and queue CRUD/attributes/URLs; (2) standard send/receive/delete/batch, attribute MD5s, visibility/delay and notifier-based long polling; (3) durable FIFO dedup/group ordering, retention and transactional DLQ transfers; (4) full conformance, all earlier exit thresholds, credential scan, make check, final ratchet and commits/push.
+- Decisions: use SQLite transactions for receives and all mutations, with outbox changes; derive account identity from authentication and ARNs from the signing region, never fixtures. Use the current branch and no extra dependencies. AWS docs govern any disagreement with pinned moto expectations.
+- Conformance: initial ratchet running; final entry will record every enabled suite's measured before/after values.
+- Concept: a queue receive leases a message for a visibility interval rather than removing it. Durable lease state and a fresh receipt handle let another consumer retry after a crash.
+- Next: measure initial SQS failures, then implement the largest shared missing operations.
