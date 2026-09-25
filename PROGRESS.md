@@ -51,3 +51,10 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Left red on purpose: `test_object_set_get_unicode_metadata` (expects RGW's Latin-1 round trip; AWS returns non-ASCII metadata RFC 2047-encoded) and `test_multipart_resend_first_finishes_last` (a timing-dependent race test; not investigated yet).
 - Concept: a multipart object's "checksum" comes in two kinds. FULL_OBJECT is the CRC of every byte, so it matches what you'd compute on the downloaded file. COMPOSITE is a checksum of the parts' checksums, which only makes sense if you know the exact part boundaries (hence the "-N" suffix).
 - Next: CORS config + preflight, lifecycle configuration storage, then blob garbage collection (the last M2 checkboxes).
+
+### 2026-09-26 02:50 · claude-opus-5.5 (interactive) · M2 · CORS and lifecycle configuration
+- Did: CORS config (Put/Get/Delete) with preflight answered before authentication and Access-Control-* headers on ordinary requests carrying Origin (errors included); lifecycle configuration storage with S3's validation rules and generated rule IDs. Tagging landed with the access-control work, so this checkbox is complete.
+- Conformance: s3 360 → 383, smoke-s3 12 → 12.
+- Left red: the four `test_cors_presigned_*_v2` tests sign with SigV2, which Citadel rejects (AWS stopped accepting SigV2 for new buckets in 2020).
+- Concept: CORS is enforced by browsers, not by S3. S3 only answers the browser's preflight question "may a page from this origin call you with this method and these headers?", and tags ordinary responses so the browser lets the page read them.
+- Next: blob garbage collection (reference counts + sweeper), the last M2 checkbox.

@@ -32,7 +32,7 @@ Goal: the S3 surface everyday tools touch.
 - [x] CopyObject (metadata directives), conditional requests (If-Match / If-None-Match / If-Modified-Since, conditional writes)
 - [x] Object metadata, content headers, response-header overrides, checksums returned with ChecksumMode
 - [x] Versioning: version IDs, delete markers, ListObjectVersions
-- [ ] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
+- [x] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
 - [x] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
 - [ ] Blob garbage collection (refcounts + sweeper)
 Conformance: `smoke-s3`, `s3`.
