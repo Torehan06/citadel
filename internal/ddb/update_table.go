@@ -192,6 +192,11 @@ func applyGSIUpdate(t *table, gu *gsiUpdate, newDefs []attrDef) (*indexDef, erro
 	}
 	switch {
 	case gu.Create != nil:
+		for _, k := range gu.Create.KeySchema {
+			if len(k.AttributeName) > 255 {
+				return nil, validation("One or more parameter values were invalid: Key attribute name is longer than 255 characters")
+			}
+		}
 		if _, exists := t.findIndex(gu.Create.IndexName); exists {
 			return nil, validation("One or more parameter values were invalid: Index with name %s already exists", gu.Create.IndexName)
 		}

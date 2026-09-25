@@ -129,11 +129,11 @@ func (t *table) keyItem(it expr.Item) expr.Item {
 // validateItem checks an item's size and shape before it is stored.
 func validateItem(it expr.Item) error {
 	for name, v := range it {
-		if name == "" {
-			return validation("One or more parameter values were invalid: An attribute name cannot be empty")
+		if err := checkNames(name, v); err != nil {
+			return err
 		}
 		if depth(v) > 32 {
-			return validation("Nesting Levels have exceeded supported limits")
+			return validation("Nesting Levels have exceeded supported limits: the item is nested too deeply")
 		}
 	}
 	if it.Size() > maxItemSize {
@@ -304,4 +304,29 @@ func writeItem(ctx context.Context, tx *store.Tx, t *table, k itemKey, old, new 
 		ON CONFLICT(table_id, idx, pk, sk, bk) DO UPDATE SET item = excluded.item, size = excluded.size`,
 		t.id, k.pk, nonNil(k.sk), raw, new.Size())
 	return err
+}
+
+// checkNames applies the attribute-name limits to a name and every map key
+// nested under it.
+func checkNames(name string, v *expr.Value) error {
+	if err := expr.CheckAttrName(name); err != nil {
+		return err
+	}
+	if v != nil && v.Kind == expr.M {
+		for k, e := range v.M {
+			if err := checkNames(k, e); err != nil {
+				return err
+			}
+		}
+	}
+	if v != nil && v.Kind == expr.L {
+		for _, e := range v.L {
+			if e.Kind == expr.M || e.Kind == expr.L {
+				if err := checkNames("x", e); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

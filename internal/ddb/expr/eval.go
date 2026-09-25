@@ -417,6 +417,14 @@ func (u *Update) Apply(it Item) (Item, error) {
 			sets = append(sets, pending{a, v.Clone()})
 		}
 	}
+	// Appends past the end of a list land in index order.
+	sort.SliceStable(sets, func(i, j int) bool {
+		a, b := sets[i].a.Path, sets[j].a.Path
+		if len(a) == len(b) && a[len(a)-1].IsIdx && b[len(b)-1].IsIdx {
+			return a[len(a)-1].Index < b[len(b)-1].Index
+		}
+		return false
+	})
 	for _, s := range sets {
 		if err := setPath(out, s.a.Path, s.v); err != nil {
 			return nil, err

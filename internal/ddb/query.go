@@ -347,8 +347,12 @@ func (h *Handler) read(c *call, isQuery bool) (any, error) {
 	if isQuery {
 		filterLegacy, filterName = in.QueryFilter, "QueryFilter"
 	}
+	if in.KeyConditions != nil && in.KeyConditionExpression != nil {
+		return nil, validation("Can not use both expression and non-expression parameters in the same request: Non-expression parameters: {KeyConditions} Expression parameters: {KeyConditionExpression}")
+	}
 	if err := mixCheck(
-		map[string]bool{"KeyConditions": in.KeyConditions != nil, filterName: filterLegacy != nil, "AttributesToGet": in.AttributesToGet != nil},
+		// KeyConditions may be combined with FilterExpression (DynamoDB accepts it).
+		map[string]bool{filterName: filterLegacy != nil, "AttributesToGet": in.AttributesToGet != nil},
 		map[string]bool{"KeyConditionExpression": in.KeyConditionExpression != nil, "FilterExpression": in.FilterExpression != nil, "ProjectionExpression": in.ProjectionExpression != nil}); err != nil {
 		return nil, err
 	}

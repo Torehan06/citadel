@@ -207,7 +207,7 @@ func validateKeySchema(ks []keyElem, defs map[string]string, what string) ([]str
 			return nil, validation("1 validation error detected: Value null at '%s.member.attributeName' failed to satisfy constraint: Member must not be null", what)
 		}
 		if len(k.AttributeName) > 255 {
-			return nil, validation("One or more parameter values were invalid: Key attribute name is too long")
+			return nil, validation("One or more parameter values were invalid: Key attribute name %s is longer than 255 characters", k.AttributeName[:10]+"...")
 		}
 		if _, ok := defs[k.AttributeName]; !ok {
 			return nil, validation("One or more parameter values were invalid: Some index key attributes are not defined in AttributeDefinitions. Keys: [%s], AttributeDefinitions: %v", k.AttributeName, sortedKeys(defs))
@@ -300,6 +300,9 @@ func (h *Handler) createTable(c *call) (any, error) {
 		return nil, validation("1 validation error detected: Value null at 'attributeDefinitions' failed to satisfy constraint: Member must not be null")
 	}
 	defs := map[string]string{}
+	if err := checkKeyNameLengths(in); err != nil {
+		return nil, err
+	}
 	for _, d := range in.AttributeDefinitions {
 		if d.AttributeName == "" {
 			return nil, validation("1 validation error detected: Value null at 'attributeDefinitions.member.attributeName' failed to satisfy constraint: Member must not be null")
@@ -608,4 +611,26 @@ func saveDesc(c *call, tx *store.Tx, t *table) error {
 	raw, _ := json.Marshal(t.desc)
 	_, err := tx.ExecContext(c.ctx, `UPDATE ddb_tables SET desc_json = ?, hlc = ? WHERE id = ?`, string(raw), int64(tx.HLC()), t.id)
 	return err
+}
+
+// checkKeyNameLengths rejects key attribute names over 255 characters before
+// any other schema check, so the error names the real problem.
+func checkKeyNameLengths(in createTableInput) error {
+	check := func(ks []keyElem) error {
+		for _, k := range ks {
+			if len(k.AttributeName) > 255 {
+				return validation("One or more parameter values were invalid: Key attribute name is longer than 255 characters")
+			}
+		}
+		return nil
+	}
+	if err := check(in.KeySchema); err != nil {
+		return err
+	}
+	for _, ix := range append(append([]indexInput{}, in.GlobalSecondaryIndexes...), in.LocalSecondaryIndexes...) {
+		if err := check(ix.KeySchema); err != nil {
+			return err
+		}
+	}
+	return nil
 }

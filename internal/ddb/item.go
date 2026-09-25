@@ -128,6 +128,9 @@ func (in *exprInput) projection() ([]expr.Path, error) {
 		seen := map[string]bool{}
 		var out []expr.Path
 		for _, a := range in.AttributesToGet {
+			if err := expr.CheckAttrName(a); err != nil {
+				return nil, err
+			}
 			if seen[a] {
 				return nil, validation("One or more parameter values were invalid: Duplicate value in attribute name: %s", a)
 			}

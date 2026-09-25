@@ -190,6 +190,7 @@ func syntaxErr(src, near string) error {
 // ---- parser ---------------------------------------------------------------------
 
 type parser struct {
+	ops    int // operators and functions seen (DynamoDB allows 300)
 	src    string
 	kind   string // "ConditionExpression", "UpdateExpression", ...
 	toks   []token
@@ -197,9 +198,29 @@ type parser struct {
 	params *Params
 }
 
+// CheckAttrName applies DynamoDB's attribute-name limits.
+func CheckAttrName(name string) error {
+	if name == "" {
+		return invalid("One or more parameter values were invalid: Empty attribute name")
+	}
+	if len(name) > maxAttrName {
+		return invalid("One or more parameter values were invalid: Attribute name size exceeds the limit of 65535 bytes")
+	}
+	return nil
+}
+
+const (
+	maxAttrName  = 65535
+	maxExprBytes = 4096
+	maxOperators = 300
+)
+
 func newParser(src, kind string, p *Params) (*parser, error) {
 	if strings.TrimSpace(src) == "" {
 		return nil, invalid("Invalid %s: The expression can not be empty;", kind)
+	}
+	if len(src) > maxExprBytes {
+		return nil, invalid("Invalid %s: Expression size has exceeded the maximum allowed size; expression size: %d", kind, len(src))
 	}
 	toks, err := lex(src)
 	if err != nil {
@@ -250,6 +271,9 @@ func (p *parser) name(t token) (string, error) {
 			return "", invalid("Invalid %s: An expression attribute name used in the document path is not defined; attribute name: %s", p.kind, t.s)
 		}
 		p.params.usedNames[t.s] = true
+		if err := CheckAttrName(v); err != nil {
+			return "", err
+		}
 		return v, nil
 	}
 	return "", p.errNear(t)
@@ -366,6 +390,15 @@ func ParseCondition(src, kind string, params *Params) (*Cond, error) {
 	return c, nil
 }
 
+// op counts one operator or function against DynamoDB's limit.
+func (p *parser) op() error {
+	p.ops++
+	if p.ops > maxOperators {
+		return invalid("Invalid %s: The expression contains too many operators; operator count: %d", p.kind, p.ops)
+	}
+	return nil
+}
+
 func (p *parser) or() (*Cond, error) {
 	l, err := p.and()
 	if err != nil {
@@ -373,6 +406,9 @@ func (p *parser) or() (*Cond, error) {
 	}
 	for p.keyword(p.peek(), "OR") {
 		p.next()
+		if err := p.op(); err != nil {
+			return nil, err
+		}
 		r, err := p.and()
 		if err != nil {
 			return nil, err
@@ -389,6 +425,9 @@ func (p *parser) and() (*Cond, error) {
 	}
 	for p.keyword(p.peek(), "AND") {
 		p.next()
+		if err := p.op(); err != nil {
+			return nil, err
+		}
 		r, err := p.not()
 		if err != nil {
 			return nil, err
@@ -401,6 +440,9 @@ func (p *parser) and() (*Cond, error) {
 func (p *parser) not() (*Cond, error) {
 	if p.keyword(p.peek(), "NOT") {
 		p.next()
+		if err := p.op(); err != nil {
+			return nil, err
+		}
 		c, err := p.not()
 		if err != nil {
 			return nil, err
@@ -429,6 +471,9 @@ func (p *parser) primary() (*Cond, error) {
 	}
 	l, err := p.operand()
 	if err != nil {
+		return nil, err
+	}
+	if err := p.op(); err != nil {
 		return nil, err
 	}
 	op := p.next()
@@ -480,6 +525,9 @@ func (p *parser) primary() (*Cond, error) {
 }
 
 func (p *parser) function() (*Cond, error) {
+	if err := p.op(); err != nil {
+		return nil, err
+	}
 	fn := p.next().s
 	p.next() // (
 	var args []*Operand
@@ -663,6 +711,10 @@ func checkPathConflicts(u *Update) error {
 			for k := 0; k < n; k++ {
 				if a[k] != b[k] {
 					same = false
+					if a[k].IsIdx != b[k].IsIdx {
+						// One path treats the value as a map, the other as a list.
+						return invalid("Invalid UpdateExpression: Two document paths conflict with each other; must remove or rewrite one of these paths; path one: [%s], path two: [%s]", pathList(a), pathList(b))
+					}
 					break
 				}
 			}

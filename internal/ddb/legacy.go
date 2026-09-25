@@ -157,6 +157,9 @@ type attributeUpdate struct {
 func applyAttributeUpdates(base expr.Item, au map[string]attributeUpdate) (expr.Item, error) {
 	out := base.Clone()
 	for _, name := range sortedNames(au) {
+		if err := expr.CheckAttrName(name); err != nil {
+			return nil, err
+		}
 		u := au[name]
 		action := u.Action
 		if action == "" {
