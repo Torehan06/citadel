@@ -38,16 +38,16 @@ Goal: the S3 surface everyday tools touch.
 Conformance: `smoke-s3`, `s3`.
 Exit: all `smoke-s3` steps pass; `s3` ≥ 300 passing (about 60% of the selection).
 
-## M3 — DynamoDB
+## M3 — DynamoDB [done]
 Goal: tables, items, and the expression language.
-- [ ] JSON 1.0 dispatch and error envelope (`__type`, ValidationException, ResourceNotFoundException, ConditionalCheckFailedException...)
-- [ ] Order-preserving key encoding for S/N/B (exhaustive unit tests, especially negative and 38-digit numbers)
-- [ ] CreateTable / DescribeTable / DeleteTable / ListTables / UpdateTable, with table status transitions
-- [ ] PutItem / GetItem / UpdateItem / DeleteItem with ReturnValues
-- [ ] Expression parser (`internal/ddb/expr`): condition, update, projection, filter, key condition, with attribute names and values
-- [ ] Query / Scan: pagination (ExclusiveStartKey), Limit, Select, segments (parallel scan)
-- [ ] GSIs and LSIs, BatchGetItem / BatchWriteItem, TransactGetItems / TransactWriteItems, TTL config, tags
-- [ ] Size and limit validation (400 KB items, key sizes, nesting depth)
+- [x] JSON 1.0 dispatch and error envelope (`__type`, ValidationException, ResourceNotFoundException, ConditionalCheckFailedException...)
+- [x] Order-preserving key encoding for S/N/B (exhaustive unit tests, especially negative and 38-digit numbers)
+- [x] CreateTable / DescribeTable / DeleteTable / ListTables / UpdateTable, with table status transitions
+- [x] PutItem / GetItem / UpdateItem / DeleteItem with ReturnValues
+- [x] Expression parser (`internal/ddb/expr`): condition, update, projection, filter, key condition, with attribute names and values
+- [x] Query / Scan: pagination (ExclusiveStartKey), Limit, Select, segments (parallel scan)
+- [x] GSIs and LSIs, BatchGetItem / BatchWriteItem, TransactGetItems / TransactWriteItems, TTL config, tags
+- [x] Size and limit validation (400 KB items, key sizes, nesting depth)
 Conformance: add `ddb` to `conformance/suites` when you start this milestone.
 Exit: `ddb` ≥ 450 passing.
 

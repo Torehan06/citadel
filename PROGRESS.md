@@ -66,3 +66,21 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Concept: content-addressed storage makes deduplication free but deletion hard. Two objects may share one file, so a blob can only go when nothing references it, and a reference can appear at any moment from a new upload of identical bytes. Hence the refcount, the grace period, and the lock around "is it still unused? then delete".
 - Next: M3 (DynamoDB). Enable the `ddb` suite in `conformance/suites` first and ratchet so its baseline starts from the real number.
 - Requests for the human: (repeat) `harness/lib.sh` never deletes `.harness/data/conformance-<port>-<pid>`, which filled the disk during this session; please remove it in `stop_citadel`.
+
+### 2026-09-26 05:30 · claude-opus-5.5 (interactive) · M3 · DynamoDB; M3 done
+- Did (all eight M3 checkboxes):
+  - JSON 1.0 dispatch with SigV4 and DynamoDB's `__type` error envelope. Unknown operation names are 400 UnknownOperationException; real operations not built yet are 501.
+  - `internal/ddb/expr`: the value model and exact decimals (38 digits, 1e-130..9.99e125); an order-preserving key encoding tested against big.Rat over ~5000 random numbers; condition, update, projection, filter and key-condition expressions with placeholder, reserved-word and path-overlap rules.
+  - Tables: Create/Describe/Delete/List/UpdateTable. Status transitions are instant: CreateTable answers CREATING and the next DescribeTable is ACTIVE.
+  - Items: Put/Get/Update/DeleteItem with ReturnValues, the legacy Expected/AttributeUpdates/AttributesToGet parameters, and consumed capacity.
+  - Query/Scan: key conditions compiled to byte ranges, filters, Select, paging, parallel segments.
+  - GSIs/LSIs maintained in the write transaction; GSI create (with backfill) and delete via UpdateTable.
+  - Batch and Transact operations; TTL configuration; tags.
+  - Size and limit validation (400 KB items, key sizes, nesting, attribute names, 4 KB and 300-operator expressions).
+  - Migration 0006.
+- Conformance before → after (every enabled suite): **ddb 0 → 800** (908 selected; exit needs ≥ 450), s3 383 → 383, smoke-s3 12 → 12. Unit tests 69 → 76. No 500s.
+- Decisions: TTL is configuration only; expired items aren't deleted yet. Tables become ACTIVE immediately. ClientRequestToken idempotency is kept in memory for 10 minutes (lost on restart). KeyConditions may be combined with FilterExpression, which DynamoDB accepts. Skips: 16 Alternator tests that read Scylla's internal `.scylla.alternator.system` tables.
+- Still failing (~66): 25 validations the tests expect to fail (several Scylla-specific, e.g. the 222-character name limit and internal TTL tags), SerializationException vs ValidationException wording for malformed JSON/base64, 413 for oversized chunked requests, a few message formats, and 4 transaction edge cases.
+- Concept: DynamoDB sorts items within a partition by sort key, so this encoding makes every key's bytes compare the way its value does. Numbers get a sign byte, a biased exponent and d+1 digits, and negatives are inverted with a terminator. Then a key condition like `BETWEEN :a AND :b` is one SQLite range scan over raw bytes.
+- Next: M4 (SQS). Add `sqs` to `conformance/suites` first. On macOS, AirPlay Receiver must be off (port 5000).
+- Requests for the human: (1) `harness/conformance.sh --nodes` can't rerun ddb tests: the report's node ids carry a `test/alternator/` prefix but pytest runs from inside that directory, so the ratchet's flake filter would count any flaky ddb test as a regression. Strip the prefix when reading `--nodes` for ddb. (2) (repeat) `harness/lib.sh` never deletes `.harness/data/conformance-*` run directories.
