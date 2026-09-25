@@ -1,9 +1,12 @@
 smoke-s3::delete-recursive
+smoke-s3::get-multipart
 smoke-s3::get-small
 smoke-s3::head-object
 smoke-s3::list-buckets
+smoke-s3::list-recursive
 smoke-s3::make-bucket
 smoke-s3::presigned-get
+smoke-s3::put-multipart
 smoke-s3::put-small
 smoke-s3::remove-bucket
 smoke-s3::sync-roundtrip
