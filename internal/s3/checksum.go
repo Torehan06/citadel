@@ -86,9 +86,10 @@ func parseRequestedChecksum(r *http.Request) (requestedChecksum, *Error) {
 		}
 	}
 	if rc.Value != "" {
+		// A value that isn't a well-formed digest can never match the body.
 		raw, err := base64.StdEncoding.DecodeString(rc.Value)
 		if err != nil || len(raw) != newChecksum(rc.Algo).Size() {
-			return rc, errInvalidArgument("Value for %s header is invalid.", checksumHeader(rc.Algo))
+			return rc, checksumMismatch(rc.Algo)
 		}
 	}
 	return rc, nil

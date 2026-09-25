@@ -30,8 +30,11 @@ const (
 
 // partRef is one entry of a multipart object's manifest.
 type partRef struct {
-	Blob string `json:"blob"`
-	Size int64  `json:"size"`
+	Blob     string `json:"blob"`
+	Size     int64  `json:"size"`
+	Number   int    `json:"n,omitempty"`        // part number in the upload
+	ETag     string `json:"etag,omitempty"`     // the part's ETag
+	Checksum string `json:"checksum,omitempty"` // the part's checksum (upload's algorithm)
 }
 
 // openRange returns a reader over [start, start+length) of the object,
@@ -171,15 +174,30 @@ func (h *Handler) createMultipartUpload(req *request) error {
 	if merr != nil {
 		return merr
 	}
+	ctype := strings.ToUpper(req.r.Header.Get("X-Amz-Checksum-Type"))
 	if a := strings.ToUpper(req.r.Header.Get("X-Amz-Checksum-Algorithm")); a != "" {
 		if newChecksum(a) == nil {
 			return errInvalidArgument("Checksum algorithm provided is unsupported.")
 		}
-		meta.ChecksumAlgo = a
-		meta.ChecksumType = strings.ToUpper(req.r.Header.Get("X-Amz-Checksum-Type"))
-		if meta.ChecksumType == "" {
-			meta.ChecksumType = "COMPOSITE"
+		if ctype == "" {
+			// S3's defaults: CRC64NVME is always full-object, the rest composite.
+			ctype = "COMPOSITE"
+			if a == "CRC64NVME" {
+				ctype = "FULL_OBJECT"
+			}
 		}
+		if ctype != "COMPOSITE" && ctype != "FULL_OBJECT" {
+			return errInvalidArgument("Value for x-amz-checksum-type header is invalid.")
+		}
+		if ctype == "FULL_OBJECT" && (a == "SHA1" || a == "SHA256") {
+			return errf(400, "InvalidRequest", "The FULL_OBJECT checksum type cannot be used with the %s checksum algorithm.", strings.ToLower(a))
+		}
+		if ctype == "COMPOSITE" && a == "CRC64NVME" {
+			return errf(400, "InvalidRequest", "The COMPOSITE checksum type cannot be used with the crc64nvme checksum algorithm.")
+		}
+		meta.ChecksumAlgo, meta.ChecksumType = a, ctype
+	} else if ctype != "" {
+		return errf(400, "InvalidRequest", "The x-amz-checksum-type header can only be used with the x-amz-checksum-algorithm header.")
 	}
 	owner, objACL, err := h.newObjectOwnership(req, b)
 	if err != nil {
@@ -274,17 +292,36 @@ func (h *Handler) savePart(req *request, u *upload, n int, p *store.Pending, eta
 	})
 }
 
+type completePart struct {
+	PartNumber        int    `xml:"PartNumber"`
+	ETag              string `xml:"ETag"`
+	ChecksumCRC32     string `xml:"ChecksumCRC32"`
+	ChecksumCRC32C    string `xml:"ChecksumCRC32C"`
+	ChecksumCRC64NVME string `xml:"ChecksumCRC64NVME"`
+	ChecksumSHA1      string `xml:"ChecksumSHA1"`
+	ChecksumSHA256    string `xml:"ChecksumSHA256"`
+}
+
 type completeRequest struct {
-	XMLName xml.Name `xml:"CompleteMultipartUpload"`
-	Parts   []struct {
-		PartNumber        int    `xml:"PartNumber"`
-		ETag              string `xml:"ETag"`
-		ChecksumCRC32     string `xml:"ChecksumCRC32"`
-		ChecksumCRC32C    string `xml:"ChecksumCRC32C"`
-		ChecksumCRC64NVME string `xml:"ChecksumCRC64NVME"`
-		ChecksumSHA1      string `xml:"ChecksumSHA1"`
-		ChecksumSHA256    string `xml:"ChecksumSHA256"`
-	} `xml:"Part"`
+	XMLName xml.Name       `xml:"CompleteMultipartUpload"`
+	Parts   []completePart `xml:"Part"`
+}
+
+// checksum returns the part checksum the client listed for algo.
+func (p completePart) checksum(algo string) string {
+	switch algo {
+	case "CRC32":
+		return p.ChecksumCRC32
+	case "CRC32C":
+		return p.ChecksumCRC32C
+	case "CRC64NVME":
+		return p.ChecksumCRC64NVME
+	case "SHA1":
+		return p.ChecksumSHA1
+	case "SHA256":
+		return p.ChecksumSHA256
+	}
+	return ""
 }
 
 type completeResult struct {
@@ -320,7 +357,9 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 	if err != nil {
 		return err
 	}
-	body, err := readSmallBody(req, 4<<20, false)
+	// On Complete, x-amz-checksum-* describes the whole object, not this
+	// small XML body, so read the body without checking those headers.
+	body, err := readPlainBody(req, 4<<20)
 	if err != nil {
 		return err
 	}
@@ -366,6 +405,9 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 		if i < len(cr.Parts)-1 && sp.size < minPartSize {
 			return errf(400, "EntityTooSmall", "Your proposed upload is smaller than the minimum allowed object size.")
 		}
+		if want := p.checksum(u.Meta.ChecksumAlgo); want != "" && want != sp.checksum {
+			return errf(400, "InvalidPart", "One or more of the specified parts could not be found. The part may not have been uploaded, or the specified entity tag may not have matched the part's entity tag.")
+		}
 		raw, _ := hex.DecodeString(strings.Trim(sp.etag, `"`))
 		md5s = append(md5s, raw...)
 		if u.Meta.ChecksumAlgo != "" {
@@ -375,7 +417,7 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 			}
 			sums = append(sums, c...)
 		}
-		manifest = append(manifest, partRef{Blob: sp.blob, Size: sp.size})
+		manifest = append(manifest, partRef{Blob: sp.blob, Size: sp.size, Number: p.PartNumber, ETag: sp.etag, Checksum: sp.checksum})
 		size += sp.size
 	}
 	sum := md5.Sum(md5s)
@@ -383,16 +425,41 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 
 	meta := u.Meta
 	res := completeResult{Location: "/" + req.bucket + "/" + req.key, Bucket: req.bucket, Key: req.key, ETag: etag}
-	if meta.ChecksumAlgo != "" && meta.ChecksumType == "COMPOSITE" {
-		// A composite checksum is the checksum of the parts' checksums, suffixed
-		// with the part count. (FULL_OBJECT multipart checksums arrive in M2.)
-		c := newChecksum(meta.ChecksumAlgo)
+	algo, ctype := meta.ChecksumAlgo, meta.ChecksumType
+	if algo == "" {
+		// No algorithm named: S3 still gives the object a full-object CRC64NVME.
+		algo, ctype = "CRC64NVME", "FULL_OBJECT"
+	}
+	var objSum string
+	if ctype == "COMPOSITE" {
+		// A composite checksum is the checksum of the parts' checksums,
+		// suffixed with the part count.
+		c := newChecksum(algo)
 		c.Write(sums)
-		meta.Checksum = encodeChecksum(c) + "-" + strconv.Itoa(len(cr.Parts))
-		setResultChecksum(&res, meta.ChecksumAlgo, meta.Checksum)
-		res.ChecksumType = "COMPOSITE"
+		objSum = encodeChecksum(c) + "-" + strconv.Itoa(len(cr.Parts))
 	} else {
-		meta.ChecksumAlgo, meta.ChecksumType = "", ""
+		// A full-object checksum covers the object's bytes: stream the parts
+		// once. (CRCs could be combined arithmetically instead; this is the
+		// simple, obviously-correct version.)
+		c := newChecksum(algo)
+		rd, err := h.openRange(&objectRow{Size: size, Parts: manifest}, 0, size)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(c, rd)
+		rd.Close()
+		if err != nil {
+			return err
+		}
+		objSum = encodeChecksum(c)
+	}
+	if want := req.r.Header.Get(checksumHeader(algo)); want != "" && want != objSum {
+		return checksumMismatch(algo)
+	}
+	meta.ChecksumAlgo, meta.ChecksumType, meta.Checksum = algo, ctype, objSum
+	if u.Meta.ChecksumAlgo != "" {
+		setResultChecksum(&res, algo, objSum)
+		res.ChecksumType = ctype
 	}
 
 	if u.Completed != "" {

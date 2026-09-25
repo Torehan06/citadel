@@ -363,9 +363,6 @@ func (h *Handler) getObject(req *request, head bool) error {
 	vid, _ := versionParam(req)
 	r, w := req.r, req.w
 	q := r.URL.Query()
-	if _, ok := q["partNumber"]; ok {
-		return errNotImplemented("GetObject partNumber")
-	}
 
 	// Conditional requests (RFC 7232 as S3 applies it).
 	if status := evalConditions(r, o); status != 0 {
@@ -380,6 +377,24 @@ func (h *Handler) getObject(req *request, head bool) error {
 	start, length, partial, rerr := parseRange(r.Header.Get("Range"), o.Size)
 	if rerr != nil {
 		return rerr
+	}
+	partNum := 0
+	if pn, ok := q["partNumber"]; ok {
+		n, err := strconv.Atoi(strings.Join(pn, ""))
+		if err != nil || n < 1 || n > maxPartNumber {
+			return errInvalidArgument("Part number must be an integer between 1 and 10000, inclusive")
+		}
+		if r.Header.Get("Range") != "" {
+			return errf(400, "InvalidRequest", "Cannot specify both Range header and partNumber query parameter")
+		}
+		s, l, count, err := partRange(o, n)
+		if err != nil {
+			return err
+		}
+		partNum, start, length, partial = n, s, l, len(o.Parts) > 0
+		if len(o.Parts) > 0 {
+			w.Header().Set("x-amz-mp-parts-count", strconv.Itoa(count))
+		}
 	}
 
 	hdr := w.Header()
@@ -409,13 +424,22 @@ func (h *Handler) getObject(req *request, head bool) error {
 	if vid != "" || b.Versioning != "" {
 		hdr.Set("x-amz-version-id", o.VersionID)
 	}
-	if strings.EqualFold(r.Header.Get("X-Amz-Checksum-Mode"), "ENABLED") && !partial && o.Meta.ChecksumAlgo != "" {
-		hdr.Set(checksumHeader(o.Meta.ChecksumAlgo), o.Meta.Checksum)
+	if strings.EqualFold(r.Header.Get("X-Amz-Checksum-Mode"), "ENABLED") && o.Meta.ChecksumAlgo != "" {
 		ct := o.Meta.ChecksumType
 		if ct == "" {
 			ct = "FULL_OBJECT"
 		}
-		hdr.Set("x-amz-checksum-type", ct)
+		switch {
+		case !partial:
+			// the whole object (or part 1 of a single-part object)
+			hdr.Set(checksumHeader(o.Meta.ChecksumAlgo), o.Meta.Checksum)
+			hdr.Set("x-amz-checksum-type", ct)
+		case partNum > 0:
+			if c := o.partChecksum(partNum); c != "" {
+				hdr.Set(checksumHeader(o.Meta.ChecksumAlgo), c)
+				hdr.Set("x-amz-checksum-type", ct)
+			}
+		}
 	}
 	hdr.Set("Content-Length", strconv.FormatInt(length, 10))
 	status := http.StatusOK
@@ -600,4 +624,29 @@ func (h *Handler) newObjectOwnership(req *request, b *bucketInfo) (ownerAcct str
 		return "", nil, errAccessDenied()
 	}
 	return ownerAcct, a, nil
+}
+
+// readPlainBody reads a small request body, checking only Content-MD5.
+func readPlainBody(req *request, limit int64) ([]byte, error) {
+	src := io.Reader(http.NoBody)
+	if req.r.Body != nil {
+		src = req.r.Body
+	}
+	body, err := io.ReadAll(io.LimitReader(src, limit+1))
+	if err != nil {
+		return nil, bodyError(err)
+	}
+	if int64(len(body)) > limit {
+		return nil, errf(400, "MaxMessageLengthExceeded", "Your request was too big.")
+	}
+	if s, ok := req.r.Header["Content-Md5"]; ok {
+		raw, err := base64.StdEncoding.DecodeString(strings.Join(s, ""))
+		if err != nil || len(raw) != md5.Size {
+			return nil, errf(400, "InvalidDigest", "The Content-MD5 you specified was invalid.")
+		}
+		if got := md5.Sum(body); !bytes.Equal(raw, got[:]) {
+			return nil, errf(400, "BadDigest", "The Content-MD5 you specified did not match what we received.")
+		}
+	}
+	return body, nil
 }

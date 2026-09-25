@@ -116,3 +116,33 @@ func TestManifestRangeReads(t *testing.T) {
 		}
 	}
 }
+
+func TestPartRange(t *testing.T) {
+	multi := &objectRow{Size: 25, Parts: []partRef{{Size: 10}, {Size: 10}, {Size: 5}}}
+	single := &objectRow{Size: 7}
+	cases := []struct {
+		o             *objectRow
+		n             int
+		start, length int64
+		count         int
+		errCode       string
+	}{
+		{multi, 1, 0, 10, 3, ""},
+		{multi, 3, 20, 5, 3, ""},
+		{multi, 4, 0, 0, 0, "InvalidPart"},
+		{single, 1, 0, 7, 1, ""},
+		{single, 2, 0, 0, 0, "InvalidPart"},
+	}
+	for _, c := range cases {
+		s, l, n, err := partRange(c.o, c.n)
+		if c.errCode != "" {
+			if e, ok := err.(*Error); !ok || e.Code != c.errCode {
+				t.Errorf("part %d: err = %v, want %s", c.n, err, c.errCode)
+			}
+			continue
+		}
+		if err != nil || s != c.start || l != c.length || n != c.count {
+			t.Errorf("part %d: got %d+%d of %d (%v), want %d+%d of %d", c.n, s, l, n, err, c.start, c.length, c.count)
+		}
+	}
+}

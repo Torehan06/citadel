@@ -197,6 +197,11 @@ func (h *Handler) objectOp(req *request, sub string) error {
 		return h.putObjectTagging(req, false)
 	case sub == "tagging" && m == http.MethodDelete:
 		return h.putObjectTagging(req, true)
+	case sub == "attributes" && m == http.MethodGet:
+		return h.getObjectAttributes(req)
+	}
+	if sub == "partNumber" && (m == http.MethodGet || m == http.MethodHead) {
+		sub = ""
 	}
 	if sub == "" {
 		switch m {
