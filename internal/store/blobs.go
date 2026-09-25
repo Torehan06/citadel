@@ -11,6 +11,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 )
 
 // Blobs is the content-addressed byte store: blobs/sha256/ab/cd/<hex>.
@@ -19,6 +21,9 @@ import (
 // upload is never visible under its address.
 type Blobs struct {
 	root string
+	// mu orders Commit against the sweeper's check-and-remove, so a blob
+	// being reused by a new upload is never deleted underneath it (gc.go).
+	mu sync.Mutex
 }
 
 // OpenBlobs creates the directory layout under root if needed.
@@ -98,7 +103,13 @@ func (p *Pending) Commit() error {
 	}
 	p.done = true
 	dst := p.b.Path(p.SHA256)
+	p.b.mu.Lock()
+	defer p.b.mu.Unlock()
 	if _, err := os.Stat(dst); err == nil {
+		// Identical content is already stored. Refresh its mtime so the
+		// sweeper's grace period protects it until our metadata commits.
+		now := time.Now()
+		_ = os.Chtimes(dst, now, now)
 		return os.Remove(p.tmp)
 	}
 	dir := filepath.Dir(dst)

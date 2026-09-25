@@ -367,6 +367,26 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 	if err := xml.Unmarshal(body, &cr); err != nil || len(cr.Parts) == 0 {
 		return errMalformedXML()
 	}
+	if u.Completed != "" {
+		// Already completed: its parts now belong to the object. A repeat
+		// with the same part list gets the same answer, as in S3.
+		var md5s []byte
+		for _, p := range cr.Parts {
+			raw, _ := hex.DecodeString(strings.Trim(p.ETag, `"`))
+			md5s = append(md5s, raw...)
+		}
+		sum := md5.Sum(md5s)
+		if fmt.Sprintf(`"%s-%d"`, hex.EncodeToString(sum[:]), len(cr.Parts)) != u.Completed {
+			return errNoSuchUpload()
+		}
+		res := completeResult{Location: "/" + req.bucket + "/" + req.key, Bucket: req.bucket, Key: req.key, ETag: u.Completed}
+		if u.Meta.Checksum != "" {
+			setResultChecksum(&res, u.Meta.ChecksumAlgo, u.Meta.Checksum)
+			res.ChecksumType = u.Meta.ChecksumType
+		}
+		writeXML(req.w, http.StatusOK, res)
+		return nil
+	}
 
 	stored := map[int]storedPart{}
 	rows, err := h.st.DB().QueryContext(req.ctx,
@@ -462,23 +482,28 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 		res.ChecksumType = ctype
 	}
 
-	if u.Completed != "" {
-		// A repeated Complete with the same parts gets the same answer.
-		if u.Completed != etag {
-			return errNoSuchUpload()
-		}
-		writeXML(req.w, http.StatusOK, res)
-		return nil
-	}
 	o := objectRow{Key: req.key, Size: size, ETag: etag, Parts: manifest, Meta: meta, Owner: u.Owner, ACL: u.ACL, Tags: u.Tags}
 	var vid string
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
-		res, err := tx.ExecContext(req.ctx, `UPDATE s3_uploads SET completed_etag = ? WHERE upload_id = ? AND completed_etag = ''`, etag, u.ID)
+		// Remember the result (ETag and, when the client asked for one, the
+		// checksum) so a repeated Complete can answer identically.
+		done := objectMeta{}
+		if res.ChecksumType != "" {
+			done = objectMeta{ChecksumAlgo: algo, ChecksumType: ctype, Checksum: objSum}
+		}
+		doneJSON, _ := json.Marshal(done)
+		upd, err := tx.ExecContext(req.ctx, `UPDATE s3_uploads SET completed_etag = ?, meta_json = ? WHERE upload_id = ? AND completed_etag = ''`,
+			etag, string(doneJSON), u.ID)
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
+		if n, _ := upd.RowsAffected(); n == 0 {
 			return errNoSuchUpload()
+		}
+		// The object's manifest now references the chosen part blobs; the
+		// part rows (and any parts left out) release theirs.
+		if _, err := tx.ExecContext(req.ctx, `DELETE FROM s3_parts WHERE upload_id = ?`, u.ID); err != nil {
+			return err
 		}
 		if err := tx.Change("s3", "CompleteMultipartUpload", req.bucket+"/"+req.key, map[string]any{"upload": u.ID, "parts": len(manifest)}); err != nil {
 			return err

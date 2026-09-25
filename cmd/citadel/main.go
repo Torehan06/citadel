@@ -57,6 +57,8 @@ func serve(args []string) error {
 	bootPath := fs.String("bootstrap", "", "bootstrap identities file (JSON)")
 	conformance := fs.Bool("conformance", false, "enable test-only endpoints used by conformance suites")
 	logFormat := fs.String("log", "json", "log format: json or text")
+	gcInterval := fs.Duration("gc-interval", 10*time.Minute, "how often to sweep unreferenced blobs (0 disables)")
+	gcGrace := fs.Duration("gc-grace", time.Hour, "minimum age of an unreferenced blob before it is deleted")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -116,6 +118,9 @@ func serve(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if *gcInterval > 0 {
+		st.StartSweeper(ctx, *gcInterval, *gcGrace, logger)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
