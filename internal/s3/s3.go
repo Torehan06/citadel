@@ -130,6 +130,8 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.deleteObjects(req)
 	case sub == "uploads" && m == http.MethodGet:
 		return h.listMultipartUploads(req)
+	case sub == "" && m == http.MethodPost:
+		return errNotImplemented("PostObject (browser-based upload)")
 	}
 	if sub == "" {
 		return errf(405, "MethodNotAllowed", "The specified method is not allowed against this resource.")
