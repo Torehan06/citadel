@@ -1,0 +1,48 @@
+# The independent referee: re-runs every enabled oracle suite on GitHub's
+# machines and fails if anything in oracle/baseline stopped passing.
+# It never raises baselines; only the loop does that, from a green local run.
+name: oracle
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  schedule:
+    - cron: '17 1 * * *'     # nightly, 01:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest   # has aws CLI v2 preinstalled
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .harness/cache
+            .harness/venv
+          key: oracle-${{ hashFiles('oracle/pins.env', 'harness/oracle.sh') }}
+      - name: ratchet (check only)
+        run: |
+          set +e
+          harness/ratchet.sh --check-only
+          rc=$?
+          # 0 = improved, 1 = unchanged: both fine here. 2 = regression, 3 = infra.
+          if [ $rc -ge 2 ]; then exit $rc; fi
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-results
+          path: |
+            .harness/results/*.pass
+            .harness/results/*.fail
+            .harness/results/*.lost
+            .harness/results/*.pytest.log
+            .harness/ratchet.last
+          retention-days: 14

@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Bash(go *)",
+      "Bash(gofmt *)",
+      "Bash(make *)",
+      "Bash(harness/oracle.sh *)",
+      "Bash(./harness/oracle.sh *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git restore *)",
+      "Bash(git stash *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(diff *)",
+      "Bash(mkdir *)",
+      "WebFetch(domain:docs.aws.amazon.com)",
+      "WebFetch(domain:pkg.go.dev)"
+    ],
+    "deny": [
+      "Edit(./harness/**)",
+      "Edit(./oracle/baseline/**)",
+      "Edit(./oracle/pins.env)",
+      "Edit(./.github/**)",
+      "Edit(./.claude/**)",
+      "Edit(./AGENTS.md)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./Makefile)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gh/**)",
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git rebase *)",
+      "Bash(git checkout main*)",
+      "Bash(sudo *)",
+      "Bash(aws configure *)",
+      "Bash(gh *)"
+    ]
+  }
+}

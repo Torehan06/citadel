@@ -1,0 +1,8 @@
+# Harness working state: builds, caches, venvs, logs, oracle results
+/.harness/
+/data/
+
+# Agent scratch
+*.test
+*.out
+.DS_Store

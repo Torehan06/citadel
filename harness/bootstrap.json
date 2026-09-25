@@ -1,0 +1,95 @@
+{
+  "_comment": "Test identities only. These keys are published in upstream test suites (ceph/s3-tests, getmoto/moto, scylladb alternator tests). Never put a real credential here.",
+  "accounts": [
+    {
+      "id": "123456789012",
+      "name": "main",
+      "canonical_id": "testid",
+      "display_name": "M. Tester",
+      "email": "tester@ceph.com",
+      "users": [
+        {
+          "name": "s3tests-main",
+          "access_key": "0555b35654ad1656d804",
+          "secret_key": "h7GhxuBLTrlhVUyxSPUKUV8r/2EI4ngqJxD7iBdBYLhwluN30JaT3Q=="
+        },
+        {
+          "name": "s3tests-iam",
+          "access_key": "ABCDEFGHIJKLMNOPQRST",
+          "secret_key": "abcdefghijklmnopqrstuvwxyzabcdefghijklmn"
+        },
+        {
+          "name": "moto",
+          "access_key": "FOOBARKEY",
+          "secret_key": "FOOBARSECRET"
+        },
+        {
+          "name": "alternator",
+          "access_key": "unknownuser",
+          "secret_key": "unknownsecret"
+        },
+        {
+          "name": "dev",
+          "access_key": "CITADELDEVKEY0000001",
+          "secret_key": "citadel-dev-secret-not-a-real-key"
+        }
+      ]
+    },
+    {
+      "id": "210987654321",
+      "name": "alt",
+      "canonical_id": "56789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234",
+      "display_name": "john.doe",
+      "email": "john.doe@example.com",
+      "users": [
+        {
+          "name": "s3tests-alt",
+          "access_key": "NOPQRSTUVWXYZABCDEFG",
+          "secret_key": "nopqrstuvwxyzabcdefghijklmnabcdefghijklm"
+        }
+      ]
+    },
+    {
+      "id": "333333333333",
+      "name": "tenant",
+      "canonical_id": "testx$9876543210abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "display_name": "testx$tenanteduser",
+      "email": "tenanteduser@example.com",
+      "users": [
+        {
+          "name": "s3tests-tenant",
+          "access_key": "HIJKLMNOPQRSTUVWXYZA",
+          "secret_key": "opqrstuvwxyzabcdefghijklmnopqrstuvwxyzab"
+        }
+      ]
+    },
+    {
+      "id": "444444444444",
+      "name": "iam-root",
+      "canonical_id": "444444444444",
+      "display_name": "iam root",
+      "email": "account1@ceph.com",
+      "users": [
+        {
+          "name": "root",
+          "access_key": "AAAAAAAAAAAAAAAAAAaa",
+          "secret_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "id": "555555555555",
+      "name": "iam-alt-root",
+      "canonical_id": "555555555555",
+      "display_name": "iam alt root",
+      "email": "account2@ceph.com",
+      "users": [
+        {
+          "name": "root",
+          "access_key": "BBBBBBBBBBBBBBBBBBbb",
+          "secret_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  ]
+}

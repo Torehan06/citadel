@@ -1,0 +1,5 @@
+# Tests the crew should stop chasing, one node id per line, each with a reason:
+#   s3tests/functional/test_s3.py::test_example   # RGW-specific error message text
+# Skipped tests still run and still count if they pass; this only hides them
+# from the "what to work on" list. Every edit here shows up in the morning
+# report for review.
