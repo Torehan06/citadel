@@ -26,7 +26,7 @@ Start here: every s3-tests test runs **ListBuckets** in its setup fixture. Its t
 Conformance: `smoke-s3`, `s3`.
 Exit: all 12 `smoke-s3` steps pass except `put-multipart`, `get-multipart` and `sync-roundtrip` (those land in M2); `s3` ≥ 120 passing.
 
-## M2 — Real S3
+## M2 — Real S3 [done]
 Goal: the S3 surface everyday tools touch.
 - [x] Multipart upload (create, upload part, upload part copy, list parts, complete, abort, list uploads), stored as a part manifest with no byte copying
 - [x] CopyObject (metadata directives), conditional requests (If-Match / If-None-Match / If-Modified-Since, conditional writes)
@@ -34,7 +34,7 @@ Goal: the S3 surface everyday tools touch.
 - [x] Versioning: version IDs, delete markers, ListObjectVersions
 - [x] Tagging (object, bucket), CORS config + preflight, lifecycle config storage (no expiry execution yet)
 - [x] Canned ACLs, grant headers, bucket policy evaluation for the s3-tests subset; ownership controls; public access block
-- [ ] Blob garbage collection (refcounts + sweeper)
+- [x] Blob garbage collection (refcounts + sweeper)
 Conformance: `smoke-s3`, `s3`.
 Exit: all `smoke-s3` steps pass; `s3` ≥ 300 passing (about 60% of the selection).
 
