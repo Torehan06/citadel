@@ -18,6 +18,7 @@ import (
 
 	"citadel/internal/api"
 	"citadel/internal/bootstrap"
+	"citadel/internal/ddb"
 	"citadel/internal/s3"
 	"citadel/internal/sigv4"
 	"citadel/internal/store"
@@ -109,6 +110,7 @@ func serve(args []string) error {
 		Bootstrap: boot, Conformance: *conformance, Logger: logger,
 	})
 	srv.Handle(api.SvcS3, s3.New(st, verifier, *region, logger))
+	srv.Handle(api.SvcDynamoDB, ddb.New(st, verifier, *region, logger))
 
 	httpSrv := &http.Server{
 		Addr:              *listen,
