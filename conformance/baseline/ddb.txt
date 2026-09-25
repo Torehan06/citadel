@@ -240,6 +240,7 @@ test/alternator/test_gsi.py::test_gsi_projection_nonkeyattributess_forbidden
 test/alternator/test_gsi.py::test_gsi_query_exclusivestartkey
 test/alternator/test_gsi.py::test_gsi_query_exclusivestartkey_missing_column
 test/alternator/test_gsi.py::test_gsi_query_paging
+test/alternator/test_gsi.py::test_gsi_query_select_1
 test/alternator/test_gsi.py::test_gsi_range_key_only_rejected
 test/alternator/test_gsi.py::test_gsi_same_key
 test/alternator/test_gsi.py::test_gsi_same_name_forbidden
@@ -406,11 +407,24 @@ test/alternator/test_key_conditions.py::test_key_conditions_unsigned_bytes
 test/alternator/test_key_conditions.py::test_key_conditions_wrong_type
 test/alternator/test_key_conditions.py::test_query_basic_restrictions
 test/alternator/test_limits.py::test_deeply_nested_expression_1
+test/alternator/test_limits.py::test_deeply_nested_expression_2
+test/alternator/test_limits.py::test_deeply_nested_expression_4
 test/alternator/test_limits.py::test_deeply_nested_expression_5
+test/alternator/test_limits.py::test_limit_attribute_length_gsi_lsi_bad
 test/alternator/test_limits.py::test_limit_attribute_length_gsi_lsi_good
 test/alternator/test_limits.py::test_limit_attribute_length_gsi_lsi_projection_all
+test/alternator/test_limits.py::test_limit_attribute_length_key_bad
 test/alternator/test_limits.py::test_limit_attribute_length_key_good
+test/alternator/test_limits.py::test_limit_attribute_length_nonkey_bad
+test/alternator/test_limits.py::test_limit_attribute_length_nonkey_empty
 test/alternator/test_limits.py::test_limit_attribute_length_nonkey_good
+test/alternator/test_limits.py::test_limit_expression_len
+test/alternator/test_limits.py::test_limit_expression_len_crash1
+test/alternator/test_limits.py::test_limit_expression_len_crash2
+test/alternator/test_limits.py::test_limit_expression_len_crash3
+test/alternator/test_limits.py::test_limit_expression_len_crash4
+test/alternator/test_limits.py::test_limit_expression_len_crash5
+test/alternator/test_limits.py::test_limit_gsiu_key_len_bad
 test/alternator/test_limits.py::test_limit_partition_key_len
 test/alternator/test_limits.py::test_limit_partition_key_len_2048
 test/alternator/test_limits.py::test_limit_sort_key_len
@@ -456,6 +470,7 @@ test/alternator/test_manual_requests.py::test_content_type
 test/alternator/test_manual_requests.py::test_content_type_error
 test/alternator/test_manual_requests.py::test_content_type_long
 test/alternator/test_manual_requests.py::test_deeply_nested_put
+test/alternator/test_manual_requests.py::test_exceed_nested_level_a_little
 test/alternator/test_manual_requests.py::test_exception_escape
 test/alternator/test_manual_requests.py::test_exception_escape_raw
 test/alternator/test_manual_requests.py::test_incorrect_json
@@ -493,9 +508,11 @@ test/alternator/test_projection_expression.py::test_projection_expression_path_d
 test/alternator/test_projection_expression.py::test_projection_expression_path_nesting_levels
 test/alternator/test_projection_expression.py::test_projection_expression_path_overlap
 test/alternator/test_projection_expression.py::test_projection_expression_path_references
+test/alternator/test_projection_expression.py::test_projection_expression_query
 test/alternator/test_projection_expression.py::test_projection_expression_scan
 test/alternator/test_projection_expression.py::test_projection_expression_toplevel
 test/alternator/test_projection_expression.py::test_projection_expression_toplevel_syntax
+test/alternator/test_projection_expression.py::test_query_projection_expression_path
 test/alternator/test_projection_expression.py::test_scan_projection_expression_path
 test/alternator/test_provisioned_throughput.py::test_create_pay_per_request_units
 test/alternator/test_provisioned_throughput.py::test_create_table
@@ -506,6 +523,7 @@ test/alternator/test_query.py::test_query_exclusivestartkey_missing_sortkey
 test/alternator/test_query.py::test_query_exclusivestartkey_spurious_column
 test/alternator/test_query.py::test_query_exclusivestartkey_wrong_partition
 test/alternator/test_query.py::test_query_exclusivestartkey_wrong_types
+test/alternator/test_query.py::test_query_filter_expression
 test/alternator/test_query.py::test_query_filtering_attributes_equality
 test/alternator/test_query.py::test_query_large_page_small_rows
 test/alternator/test_query.py::test_query_limit
@@ -729,6 +747,7 @@ test/alternator/test_ttl.py::test_update_ttl_errors[using tablets]
 test/alternator/test_ttl.py::test_update_ttl_errors[using vnodes]
 test/alternator/test_update_expression.py::test_nested_attribute_remove_from_missing_item
 test/alternator/test_update_expression.py::test_nested_attribute_remove_missing_leaf
+test/alternator/test_update_expression.py::test_nested_attribute_update_array_out_of_bounds
 test/alternator/test_update_expression.py::test_update_expression_action_case
 test/alternator/test_update_expression.py::test_update_expression_action_whitespace
 test/alternator/test_update_expression.py::test_update_expression_add_lists
@@ -746,6 +765,7 @@ test/alternator/test_update_expression.py::test_update_expression_list_append
 test/alternator/test_update_expression.py::test_update_expression_list_append_basic
 test/alternator/test_update_expression.py::test_update_expression_list_append_non_list_arguments
 test/alternator/test_update_expression.py::test_update_expression_multi
+test/alternator/test_update_expression.py::test_update_expression_multi_conflict_nested
 test/alternator/test_update_expression.py::test_update_expression_multi_nested
 test/alternator/test_update_expression.py::test_update_expression_multi_overlap
 test/alternator/test_update_expression.py::test_update_expression_multi_overlap_nested
