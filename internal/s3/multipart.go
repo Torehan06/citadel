@@ -117,23 +117,34 @@ func errNoSuchUpload() *Error {
 }
 
 type upload struct {
-	ID    string
-	Key   string
-	Owner string
-	Meta  objectMeta
+	ID        string
+	Key       string
+	Owner     string // account that will own the object
+	Meta      objectMeta
+	Tags      []tag
+	ACL       *acl   // nil: default private
+	Completed string // ETag of the object it became, "" while in progress
 }
 
-func (h *Handler) loadUpload(req *request, id string) (*upload, error) {
+// loadUpload finds an in-progress upload (or, with completed, one that has
+// already been completed).
+func (h *Handler) loadUpload(req *request, id string, completed bool) (*upload, error) {
 	var u upload
-	var meta string
-	err := h.st.DB().QueryRowContext(req.ctx,
-		`SELECT upload_id, key, owner, meta_json FROM s3_uploads WHERE upload_id = ? AND bucket = ? AND key = ?`,
-		id, req.bucket, req.key).Scan(&u.ID, &u.Key, &u.Owner, &meta)
-	if errors.Is(err, sql.ErrNoRows) {
+	var meta, tags, aclJSON, ownerCanonical string
+	err := h.st.DB().QueryRowContext(req.ctx, `
+		SELECT u.upload_id, u.key, u.owner, u.meta_json, u.tagging, u.acl, u.completed_etag, COALESCE(a.canonical_id, u.owner)
+		FROM s3_uploads u LEFT JOIN accounts a ON a.id = u.owner
+		WHERE u.upload_id = ? AND u.bucket = ? AND u.key = ?`,
+		id, req.bucket, req.key).Scan(&u.ID, &u.Key, &u.Owner, &meta, &tags, &aclJSON, &u.Completed, &ownerCanonical)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && u.Completed != "" && !completed) {
 		return nil, errNoSuchUpload()
 	}
 	if err != nil {
 		return nil, err
+	}
+	u.Tags = parseStoredTags(tags)
+	if aclJSON != "" {
+		u.ACL = parseStoredACL(aclJSON, ownerCanonical)
 	}
 	return &u, json.Unmarshal([]byte(meta), &u.Meta)
 }
@@ -170,12 +181,24 @@ func (h *Handler) createMultipartUpload(req *request) error {
 			meta.ChecksumType = "COMPOSITE"
 		}
 	}
+	owner, objACL, err := h.newObjectOwnership(req, b)
+	if err != nil {
+		return err
+	}
+	tags, err := tagsFromHeader(req.r)
+	if err != nil {
+		return err
+	}
+	aclJSON := ""
+	if objACL != nil {
+		aclJSON = objACL.json()
+	}
 	metaJSON, _ := json.Marshal(meta)
 	id := newUploadID()
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		if _, err := tx.ExecContext(req.ctx,
-			`INSERT INTO s3_uploads(upload_id, bucket, key, initiated, owner, meta_json) VALUES (?, ?, ?, ?, ?, ?)`,
-			id, req.bucket, req.key, tx.HLC().WallMs(), req.who.Account.ID, string(metaJSON)); err != nil {
+			`INSERT INTO s3_uploads(upload_id, bucket, key, initiated, owner, meta_json, tagging, acl) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, req.bucket, req.key, tx.HLC().WallMs(), owner, string(metaJSON), tagsJSON(tags), aclJSON); err != nil {
 			return err
 		}
 		return tx.Change("s3", "CreateMultipartUpload", req.bucket+"/"+req.key, map[string]string{"upload": id})
@@ -204,7 +227,7 @@ func (h *Handler) uploadPart(req *request) error {
 	if err != nil || n < 1 || n > maxPartNumber {
 		return errInvalidArgument("Part number must be an integer between 1 and 10000, inclusive")
 	}
-	u, err := h.loadUpload(req, q.Get("uploadId"))
+	u, err := h.loadUpload(req, q.Get("uploadId"), false)
 	if err != nil {
 		return err
 	}
@@ -237,7 +260,7 @@ func (h *Handler) savePart(req *request, u *upload, n int, p *store.Pending, eta
 	return h.st.Update(req.ctx, func(tx *store.Tx) error {
 		res, err := tx.ExecContext(req.ctx, `
 			INSERT INTO s3_parts(upload_id, part_number, size, etag, blob, checksum, last_modified)
-			SELECT upload_id, ?, ?, ?, ?, ?, ? FROM s3_uploads WHERE upload_id = ?
+			SELECT upload_id, ?, ?, ?, ?, ?, ? FROM s3_uploads WHERE upload_id = ? AND completed_etag = ''
 			ON CONFLICT(upload_id, part_number) DO UPDATE SET size=excluded.size, etag=excluded.etag,
 				blob=excluded.blob, checksum=excluded.checksum, last_modified=excluded.last_modified`,
 			n, p.Size, etag, p.SHA256, checksum, tx.HLC().WallMs(), u.ID)
@@ -293,7 +316,7 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 	if err := h.authorizeWrite(req, b, req.key, "s3:PutObject"); err != nil {
 		return err
 	}
-	u, err := h.loadUpload(req, req.r.URL.Query().Get("uploadId"))
+	u, err := h.loadUpload(req, req.r.URL.Query().Get("uploadId"), true)
 	if err != nil {
 		return err
 	}
@@ -372,10 +395,18 @@ func (h *Handler) completeMultipartUpload(req *request) error {
 		meta.ChecksumAlgo, meta.ChecksumType = "", ""
 	}
 
-	o := objectRow{Key: req.key, Size: size, ETag: etag, Parts: manifest, Meta: meta}
+	if u.Completed != "" {
+		// A repeated Complete with the same parts gets the same answer.
+		if u.Completed != etag {
+			return errNoSuchUpload()
+		}
+		writeXML(req.w, http.StatusOK, res)
+		return nil
+	}
+	o := objectRow{Key: req.key, Size: size, ETag: etag, Parts: manifest, Meta: meta, Owner: u.Owner, ACL: u.ACL, Tags: u.Tags}
 	var vid string
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
-		res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_uploads WHERE upload_id = ?`, u.ID)
+		res, err := tx.ExecContext(req.ctx, `UPDATE s3_uploads SET completed_etag = ? WHERE upload_id = ? AND completed_etag = ''`, etag, u.ID)
 		if err != nil {
 			return err
 		}
@@ -423,7 +454,7 @@ func (h *Handler) abortMultipartUpload(req *request) error {
 	}
 	id := req.r.URL.Query().Get("uploadId")
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
-		res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_uploads WHERE upload_id = ? AND bucket = ? AND key = ?`, id, req.bucket, req.key)
+		res, err := tx.ExecContext(req.ctx, `DELETE FROM s3_uploads WHERE upload_id = ? AND bucket = ? AND key = ? AND completed_etag = ''`, id, req.bucket, req.key)
 		if err != nil {
 			return err
 		}
@@ -467,7 +498,7 @@ func (h *Handler) listParts(req *request) error {
 		return err
 	}
 	q := req.r.URL.Query()
-	u, err := h.loadUpload(req, q.Get("uploadId"))
+	u, err := h.loadUpload(req, q.Get("uploadId"), false)
 	if err != nil {
 		return err
 	}
@@ -563,7 +594,7 @@ func (h *Handler) listMultipartUploads(req *request) error {
 	prefix, keyMarker := q.Get("prefix"), q.Get("key-marker")
 	rows, err := h.st.DB().QueryContext(req.ctx, `
 		SELECT key, upload_id, owner, initiated FROM s3_uploads
-		WHERE bucket = ? AND key > ? AND substr(key, 1, length(?)) = ?
+		WHERE bucket = ? AND completed_etag = '' AND key > ? AND substr(key, 1, length(?)) = ?
 		ORDER BY key, initiated LIMIT ?`, req.bucket, keyMarker, prefix, prefix, maxUploads+1)
 	if err != nil {
 		return err
