@@ -10,6 +10,7 @@ import (
 	"errors"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // Config is a function version's configuration, exactly as the API returns
@@ -104,39 +105,70 @@ func (r fnRef) qualifiedARN(q string) string {
 func (r fnRef) key() string { return r.account + "/" + r.region + "/" + r.name }
 
 var (
-	namePattern = regexp.MustCompile(`^[a-zA-Z0-9-_]{1,64}$`)
-	// A "namespaced" function name: a name, a partial ARN or a full ARN,
-	// optionally with a version or alias qualifier.
-	namespacedPattern = regexp.MustCompile(`^(arn:(aws[a-zA-Z-]*)?:lambda:)?(([a-z]{2}((-gov)|(-iso([a-z]?)))?-[a-z]+-\d{1}):)?((\d{12}):)?(function:)?([a-zA-Z0-9-_\.]+)(:(\$LATEST|[a-zA-Z0-9-_]+))?$`)
-	qualifierPattern  = regexp.MustCompile(`^(|[a-zA-Z0-9$_-]+)$`)
+	namePattern      = regexp.MustCompile(`^[a-zA-Z0-9-_]{1,64}$`)
+	qualifierPattern = regexp.MustCompile(`^(|[a-zA-Z0-9$_-]+)$`)
+	// Regions: AWS's (us-west-2, us-isob-east-1) and Citadel's (tuchanka-1).
+	regionPattern = regexp.MustCompile(`^[a-z]{2,}(-[a-z0-9]+)*-\d+$`)
+	accountID     = regexp.MustCompile(`^\d{12}$`)
 )
 
-// parseName resolves a FunctionName path parameter (name, partial ARN or
-// ARN, with an optional ":qualifier") plus an optional Qualifier parameter.
+// namespacedRule is the pattern Lambda quotes when a function name is malformed.
+const namespacedRule = `(arn:(aws[a-zA-Z-]*)?:lambda:)?([a-z]{2}(-gov)?-[a-z]+-\d{1}:)?(\d{12}:)?(function:)?([a-zA-Z0-9-_\.]+)(:(\$LATEST|[a-zA-Z0-9-_]+))?`
+
+// parseName resolves a FunctionName path parameter plus an optional
+// Qualifier parameter. A function can be named four ways: "name",
+// "name:qualifier", a partial ARN "account:function:name[:qualifier]" or a
+// full ARN "arn:partition:lambda:region:account:function:name[:qualifier]".
+// It splits on the colons structurally rather than with one regular
+// expression, so a name like "my-func-1:live" can never be mistaken for a
+// region followed by a name.
 func (c *call) parseName(raw, qualifier string) (fnRef, error) {
 	ref := fnRef{account: c.account, region: c.region}
-	m := namespacedPattern.FindStringSubmatch(raw)
-	if m == nil || len(raw) > 170 {
-		return ref, validation("1 validation error detected: Value '%s' at 'functionName' failed to satisfy constraint: Member must satisfy regular expression pattern: %s", raw, namespacedPattern.String())
+	bad := func() (fnRef, error) {
+		return ref, validation("1 validation error detected: Value '%s' at 'functionName' failed to satisfy constraint: Member must satisfy regular expression pattern: %s", raw, namespacedRule)
 	}
-	if m[4] != "" {
-		ref.region = m[4]
+	if raw == "" || len(raw) > 170 {
+		return bad()
 	}
-	if m[10] != "" {
-		ref.account = m[10]
+	parts := strings.Split(raw, ":")
+	var inName string
+	hasQualifier := false
+	switch {
+	case parts[0] == "arn":
+		if (len(parts) != 7 && len(parts) != 8) || parts[2] != "lambda" || parts[5] != "function" ||
+			!regionPattern.MatchString(parts[3]) || !accountID.MatchString(parts[4]) {
+			return bad()
+		}
+		ref.region, ref.account, ref.name = parts[3], parts[4], parts[6]
+		if len(parts) == 8 {
+			inName, hasQualifier = parts[7], true
+		}
+	case len(parts) >= 3 && parts[1] == "function":
+		if len(parts) > 4 || !accountID.MatchString(parts[0]) {
+			return bad()
+		}
+		ref.account, ref.name = parts[0], parts[2]
+		if len(parts) == 4 {
+			inName, hasQualifier = parts[3], true
+		}
+	case len(parts) <= 2:
+		ref.name = parts[0]
+		if len(parts) == 2 {
+			inName, hasQualifier = parts[1], true
+		}
+	default:
+		return bad()
 	}
-	ref.name = m[12]
-	inName := m[14]
-	if !namePattern.MatchString(ref.name) {
-		return ref, validation("1 validation error detected: Value '%s' at 'functionName' failed to satisfy constraint: Member must satisfy regular expression pattern: %s", raw, namespacedPattern.String())
+	if !namePattern.MatchString(ref.name) || (hasQualifier && (inName == "" || !qualifierPattern.MatchString(inName))) {
+		return bad()
 	}
 	if !qualifierPattern.MatchString(qualifier) || len(qualifier) > 128 {
 		return ref, validation("1 validation error detected: Value '%s' at 'qualifier' failed to satisfy constraint: Member must satisfy regular expression pattern: (|[a-zA-Z0-9$_-]+)", qualifier)
 	}
 	switch {
-	case inName != "" && qualifier != "" && inName != qualifier:
+	case hasQualifier && qualifier != "" && inName != qualifier:
 		return ref, invalid("The derived qualifier from the function name does not match the specified qualifier.")
-	case inName != "":
+	case hasQualifier:
 		ref.qualifier = inName
 	default:
 		ref.qualifier = qualifier

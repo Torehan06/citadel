@@ -326,7 +326,9 @@ type eventInvokeConfig struct {
 	DestinationConfig        map[string]any `json:"DestinationConfig,omitempty"`
 }
 
-var destinationPattern = regexp.MustCompile(`^$|arn:(aws[a-zA-Z0-9-]*):([a-zA-Z0-9\-])+:([a-z]{2}(-gov)?-[a-z]+-\d{1})?:(\d{12})?:(.*)`)
+// destinationPattern is AWS's, with the region part widened to Citadel's
+// region names (tuchanka-1); the error message still quotes AWS's.
+var destinationPattern = regexp.MustCompile(`^$|arn:(aws[a-zA-Z0-9-]*):([a-zA-Z0-9\-])+:([a-z]{2}[a-z0-9-]*-\d+)?:(\d{12})?:(.*)`)
 
 type eventInvokeInput struct {
 	MaximumRetryAttempts     *int
