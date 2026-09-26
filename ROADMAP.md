@@ -61,11 +61,11 @@ Exit: `ddb` ≥ 450 passing.
 Conformance: add `sqs` to `conformance/suites`.
 Exit: `sqs` ≥ 110 passing.
 
-## M5 — IAM and STS
-- [ ] Query protocol for IAM and STS
-- [ ] Users, groups, roles, access keys, managed and inline policies, attachments, instance-profile stubs Terraform needs
-- [ ] STS: GetCallerIdentity, AssumeRole (temporary `ASIA…` keys + session tokens understood by `internal/sigv4`)
-- [ ] Policy evaluation (identity + resource policies, explicit deny, common condition operators), enforced for S3, DynamoDB and SQS actions
+## M5 — IAM and STS [done]
+- [x] Query protocol for IAM and STS
+- [x] Users, groups, roles, access keys, managed and inline policies, attachments, instance-profile stubs Terraform needs
+- [x] STS: GetCallerIdentity, AssumeRole (temporary `ASIA…` keys + session tokens understood by `internal/sigv4`)
+- [x] Policy evaluation (identity + resource policies, explicit deny, common condition operators), enforced for S3, DynamoDB and SQS actions
 Conformance: add `iam` to `conformance/suites`.
 Exit: `iam` ≥ 150 passing; no `s3` or `ddb` regressions from enforcement.
 
