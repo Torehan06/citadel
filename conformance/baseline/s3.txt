@@ -302,6 +302,7 @@ s3tests/functional/test_s3.py::test_object_copy_versioning_multipart_upload
 s3tests/functional/test_s3.py::test_object_copy_zero_size
 s3tests/functional/test_s3.py::test_object_delete_key_bucket_gone
 s3tests/functional/test_s3.py::test_object_head_zero_bytes
+s3tests/functional/test_s3.py::test_object_lock_get_obj_lock_invalid_bucket
 s3tests/functional/test_s3.py::test_object_metadata_replaced_on_put
 s3tests/functional/test_s3.py::test_object_presigned_put_object_with_acl
 s3tests/functional/test_s3.py::test_object_put_acl_mtime
