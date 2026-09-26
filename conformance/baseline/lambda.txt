@@ -1,0 +1,1 @@
+tests/test_awslambda/test_lambda.py::test_get_role_name_utility_race_condition
