@@ -57,6 +57,9 @@ func (h *Handler) createBucket(req *request) error {
 	if req.who == nil {
 		return errAccessDenied()
 	}
+	if err := h.requireIdentity(req, "s3:CreateBucket", bucketResource(req.bucket)); err != nil {
+		return err
+	}
 	if !validBucketName(req.bucket) {
 		return &Error{Status: 400, Code: "InvalidBucketName", Message: "The specified bucket is not valid.", Bucket: req.bucket}
 	}
@@ -197,6 +200,9 @@ type bucketItem struct {
 func (h *Handler) listBuckets(req *request) error {
 	if req.who == nil {
 		return errAccessDenied()
+	}
+	if err := h.requireIdentity(req, "s3:ListAllMyBuckets", "*"); err != nil {
+		return err
 	}
 	q := req.r.URL.Query()
 	limit := 10000

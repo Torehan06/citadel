@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"citadel/internal/iam"
 	"citadel/internal/sigv4"
 	"citadel/internal/store"
 )
@@ -26,6 +27,9 @@ type Handler struct {
 	mu      sync.Mutex
 	notices map[int64]chan struct{}
 	now     func() time.Time
+	// IAM enforces identity policies for IAM users and role sessions; nil
+	// allows every authenticated caller everything in its account.
+	IAM *iam.Authorizer
 }
 
 func New(st *store.Store, auth *sigv4.Verifier, region string, logger *slog.Logger) *Handler {
@@ -146,6 +150,9 @@ func (h *Handler) serve(r *http.Request, query bool) (string, map[string]any, er
 	c := &call{ctx: r.Context(), account: who.Account.ID, region: auth.Region, host: r.Host, scheme: scheme, sender: who.Account.ID}
 	if c.region == "" {
 		c.region = h.region
+	}
+	if err := h.authorize(c, &who, op, &req); err != nil {
+		return op, nil, err
 	}
 	out, err := h.dispatch(c, op, &req)
 	return op, out, err

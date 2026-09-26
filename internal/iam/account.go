@@ -33,11 +33,8 @@ func (c *call) profileXML(p *Profile) (obj, error) {
 			roles = append(roles, roleXML(r, false))
 		}
 	}
-	o := obj{{"Path", p.Path}, {"InstanceProfileName", p.Name}, {"InstanceProfileId", p.ID}, {"Arn", p.ARN}, {"CreateDate", p.Created}, {"Roles", roles}}
-	if len(p.Tags) > 0 {
-		o = append(o, kv{"Tags", tagsXML(p.Tags)})
-	}
-	return o, nil
+	return obj{{"Path", p.Path}, {"InstanceProfileName", p.Name}, {"InstanceProfileId", p.ID}, {"Arn", p.ARN},
+		{"CreateDate", p.Created}, {"Roles", roles}, {"Tags", tagsXML(p.Tags)}}, nil
 }
 
 func (c *call) roleByID(id string) (*Role, error) {
@@ -463,9 +460,7 @@ func getAccountPasswordPolicy(c *call) (obj, error) {
 	o := obj{{"MinimumPasswordLength", p.MinLength}, {"RequireSymbols", p.RequireSymbols}, {"RequireNumbers", p.RequireNumbers},
 		{"RequireUppercaseCharacters", p.Up}, {"RequireLowercaseCharacters", p.RequireLower},
 		{"AllowUsersToChangePassword", p.AllowChange}, {"ExpirePasswords", p.MaxAge > 0}}
-	if p.MaxAge > 0 {
-		o = append(o, kv{"MaxPasswordAge", p.MaxAge})
-	}
+	o = append(o, kv{"MaxPasswordAge", p.MaxAge})
 	if p.ReusePrevention > 0 {
 		o = append(o, kv{"PasswordReusePrevention", p.ReusePrevention})
 	}

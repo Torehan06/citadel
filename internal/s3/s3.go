@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"citadel/internal/iam"
 	"citadel/internal/sigv4"
 	"citadel/internal/store"
 )
@@ -19,6 +20,9 @@ type Handler struct {
 	auth   *sigv4.Verifier
 	region string
 	log    *slog.Logger
+	// IAM enforces identity policies for IAM users and role sessions; nil
+	// allows every authenticated caller everything its account may do.
+	IAM *iam.Authorizer
 }
 
 func New(st *store.Store, v *sigv4.Verifier, region string, log *slog.Logger) *Handler {

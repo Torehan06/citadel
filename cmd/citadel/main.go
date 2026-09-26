@@ -115,9 +115,16 @@ func serve(args []string) error {
 	verifier.Session = iamHandler.CheckSession
 	srv.Handle(api.SvcIAM, iamHandler)
 	srv.Handle(api.SvcSTS, iamHandler.STS())
-	srv.Handle(api.SvcS3, s3.New(st, verifier, *region, logger))
-	srv.Handle(api.SvcDynamoDB, ddb.New(st, verifier, *region, logger))
-	srv.Handle(api.SvcSQS, sqs.New(st, verifier, *region, logger))
+	authz := iamHandler.Authorizer()
+	s3Handler := s3.New(st, verifier, *region, logger)
+	s3Handler.IAM = authz
+	ddbHandler := ddb.New(st, verifier, *region, logger)
+	ddbHandler.IAM = authz
+	sqsHandler := sqs.New(st, verifier, *region, logger)
+	sqsHandler.IAM = authz
+	srv.Handle(api.SvcS3, s3Handler)
+	srv.Handle(api.SvcDynamoDB, ddbHandler)
+	srv.Handle(api.SvcSQS, sqsHandler)
 
 	httpSrv := &http.Server{
 		Addr:              *listen,

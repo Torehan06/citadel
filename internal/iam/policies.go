@@ -229,7 +229,7 @@ func createPolicyVersion(c *call) (obj, error) {
 	if err := c.savePolicy(p); err != nil {
 		return nil, err
 	}
-	return obj{{"PolicyVersion", versionXML(v, p.Default, false)}}, nil
+	return obj{{"PolicyVersion", versionXML(v, p.Default, true)}}, nil
 }
 
 func getPolicyVersion(c *call) (obj, error) {
@@ -512,6 +512,9 @@ func listEntitiesForPolicy(c *call) (obj, error) {
 		return nil, err
 	}
 	filter := c.f.str("EntityFilter")
+	if filter == "LocalManagedPolicy" || filter == "AWSManagedPolicy" {
+		filter = "" // policy-type filters don't narrow the entity kinds
+	}
 	prefix := c.f.str("PathPrefix")
 	want := func(kind string) bool { return filter == "" || filter == kind }
 	users, groups, roles := members{}, members{}, members{}

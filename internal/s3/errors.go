@@ -69,6 +69,12 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) int {
 	case errors.As(err, &e):
 	case errors.As(err, &se):
 		e = &Error{Status: se.Status, Code: se.Code, Message: se.Message}
+		switch se.Code { // S3's own wording for temporary-credential problems
+		case "InvalidClientTokenId":
+			e = errf(400, "InvalidToken", "The provided token is malformed or otherwise invalid.")
+		case "ExpiredToken":
+			e = errf(400, "ExpiredToken", "The provided token has expired.")
+		}
 	default:
 		e = errf(500, "InternalError", "We encountered an internal error. Please try again.")
 	}

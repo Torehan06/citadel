@@ -338,3 +338,32 @@ func (h *Handler) CheckSession(ctx context.Context, a *sigv4.Auth) error {
 	}
 	return nil
 }
+
+// Denial says which resource an identity-policy check refused, and whether
+// an explicit Deny did it.
+type Denial struct {
+	Action, Resource string
+	Explicit         bool
+}
+
+// Require checks action on every resource and returns the first denial, or
+// nil when the identity policies allow them all. A nil Authorizer allows
+// everything (unit tests and tools that run without IAM).
+func (a *Authorizer) Require(ctx context.Context, p *store.Principal, action string, resources []string, extra map[string][]string) (*Denial, error) {
+	if a == nil || p == nil || IsRoot(p) {
+		return nil, nil
+	}
+	if len(resources) == 0 {
+		resources = []string{"*"}
+	}
+	for _, r := range resources {
+		d, err := a.Decide(ctx, p, action, r, extra)
+		if err != nil {
+			return nil, err
+		}
+		if d != Allow {
+			return &Denial{Action: action, Resource: r, Explicit: d == Deny}, nil
+		}
+	}
+	return nil, nil
+}

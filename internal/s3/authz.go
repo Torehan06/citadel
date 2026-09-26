@@ -9,18 +9,22 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"citadel/internal/iam"
 )
 
 // Authorization for S3 (ARCHITECTURE.md §5, phase M2): bucket policies,
-// ACLs, object ownership and public access blocks. Identity (IAM) policies
-// arrive in M5; until then a principal may do anything to resources its
-// own account owns.
+// ACLs, object ownership and public access blocks, plus (M5) the identity
+// policies of IAM users and role sessions. Account roots, which include the
+// bootstrap identities, have no identity policies and may do anything to
+// resources their own account owns.
 //
 // Order of evaluation, as S3 applies it:
-//  1. An explicit Deny in the bucket policy wins.
-//  2. The resource owner's account is allowed.
+//  1. An explicit Deny in the bucket policy or an identity policy wins.
+//  2. The resource owner's account is allowed when the caller's identity
+//     policies allow (roots always do) or the bucket policy names it.
 //  3. An Allow in the bucket policy grants access (to objects the bucket
-//     owner owns).
+//     owner owns); across accounts the identity policies must allow too.
 //  4. An ACL grant grants access, unless ACLs are disabled
 //     (BucketOwnerEnforced) or the grant is public and IgnorePublicAcls is on.
 //  5. Otherwise: implicit deny.
@@ -134,6 +138,12 @@ func (h *Handler) evalRequest(req *request, action, resource string, extra map[s
 	if req.who != nil {
 		e.AccountID, e.UserName, e.CanonicalID = req.who.Account.ID, req.who.UserName, req.who.Account.CanonicalID
 		e.Keys["aws:principalaccount"] = []string{e.AccountID}
+		if req.who.Kind == "session" {
+			e.UserName = "" // a session is named by its role, not a user
+		}
+		if !iam.IsRoot(req.who) {
+			e.ARNs = iam.PrincipalARNs(req.who)
+		}
 	}
 	for k, v := range extra {
 		e.Keys[strings.ToLower(k)] = v
@@ -194,17 +204,48 @@ func (h *Handler) authorizeWrite(req *request, b *bucketInfo, key, action string
 
 func (h *Handler) authorize(req *request, b *bucketInfo, action, resource, aclPerm string, extra map[string][]string) error {
 	isOwner := req.account() == b.Account && req.who != nil
-	d := h.policyDecision(req, b, h.evalRequest(req, action, resource, extra))
-	if d == decisionDeny && !(isOwner && ownerOnlyEvenIfDenied[action]) {
+	e := h.evalRequest(req, action, resource, extra)
+	d := h.policyDecision(req, b, e)
+	id, err := h.identity(req, action, resource, e.Keys)
+	if err != nil {
+		return err
+	}
+	if id == iam.Deny || (d == decisionDeny && !(isOwner && iam.IsRoot(req.who) && ownerOnlyEvenIfDenied[action])) {
 		return errAccessDenied()
 	}
-	if isOwner || d == decisionAllow {
+	if isOwner && (id == iam.Allow || d == decisionAllow) {
 		return nil
 	}
-	if aclPerm != "" && b.Ownership != ownershipOwnerEnforced && b.ACL.allows(req.canonical(), aclPerm, b.PAB.IgnorePublicAcls) {
+	if !isOwner && d == decisionAllow && id == iam.Allow {
+		return nil
+	}
+	if aclPerm != "" && id == iam.Allow && b.Ownership != ownershipOwnerEnforced && b.ACL.allows(req.canonical(), aclPerm, b.PAB.IgnorePublicAcls) {
 		return nil
 	}
 	return errAccessDenied()
+}
+
+// identity evaluates the caller's IAM identity policies. Anonymous callers
+// and account roots have none to consult, so they get Allow here and are
+// judged by bucket policies and ACLs alone.
+func (h *Handler) identity(req *request, action, resource string, keys map[string][]string) (iam.Decision, error) {
+	if h.IAM == nil || req.who == nil || iam.IsRoot(req.who) {
+		return iam.Allow, nil
+	}
+	return h.IAM.Decide(req.ctx, req.who, action, resource, keys)
+}
+
+// requireIdentity is for actions no resource policy can grant (CreateBucket,
+// ListAllMyBuckets): the identity policies alone decide.
+func (h *Handler) requireIdentity(req *request, action, resource string) error {
+	id, err := h.identity(req, action, resource, requestKeys(req))
+	if err != nil {
+		return err
+	}
+	if id != iam.Allow {
+		return errAccessDenied()
+	}
+	return nil
 }
 
 // authorizeObject checks an action on an existing object version.
@@ -215,7 +256,19 @@ func (h *Handler) authorizeObject(req *request, b *bucketInfo, o *objectRow, act
 	}
 	e := h.evalRequest(req, action, objectResource(b.Name, o.Key), extra)
 	d := h.policyDecision(req, b, e)
-	if d == decisionDeny {
+	id, err := h.identity(req, action, objectResource(b.Name, o.Key), e.Keys)
+	if err != nil {
+		return err
+	}
+	if d == decisionDeny || id == iam.Deny {
+		return errAccessDenied()
+	}
+	if id != iam.Allow {
+		// An IAM principal without an identity allow gets in only through
+		// a bucket policy that names it (same account).
+		if d == decisionAllow && req.account() == b.Account && objOwnerIs(b, o, b.Account) {
+			return nil
+		}
 		return errAccessDenied()
 	}
 	acct := req.account()
@@ -240,6 +293,10 @@ func (h *Handler) authorizeObject(req *request, b *bucketInfo, o *objectRow, act
 		return nil
 	}
 	return errAccessDenied()
+}
+
+func objOwnerIs(b *bucketInfo, o *objectRow, account string) bool {
+	return b.Ownership == ownershipOwnerEnforced || o.Owner == account
 }
 
 // objectForRead loads the bucket and the addressed object version, and

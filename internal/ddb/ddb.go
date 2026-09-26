@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"citadel/internal/ddb/expr"
+	"citadel/internal/iam"
 	"citadel/internal/sigv4"
 	"citadel/internal/store"
 )
@@ -22,6 +23,9 @@ type Handler struct {
 	auth   *sigv4.Verifier
 	region string
 	log    *slog.Logger
+	// IAM enforces identity policies for IAM users and role sessions; nil
+	// allows every authenticated caller everything in its account.
+	IAM *iam.Authorizer
 }
 
 func New(st *store.Store, v *sigv4.Verifier, region string, log *slog.Logger) *Handler {
@@ -72,6 +76,10 @@ func asError(err error) *Error {
 		switch se.Code {
 		case "InvalidAccessKeyId":
 			return errf(400, "UnrecognizedClientException", "The security token included in the request is invalid.")
+		case "InvalidClientTokenId":
+			return errf(400, "UnrecognizedClientException", "The security token included in the request is invalid.")
+		case "ExpiredToken":
+			return errf(400, "ExpiredTokenException", "The security token included in the request is expired")
 		case "RequestTimeTooSkewed":
 			return errf(400, "InvalidSignatureException", "Signature expired: the request time is too far from the server time.")
 		case "SignatureDoesNotMatch":
@@ -161,7 +169,11 @@ func (h *Handler) serve(r *http.Request) (any, error) {
 		}
 		return nil, errf(501, "NotImplemented", "citadel: DynamoDB %s is not implemented yet", name)
 	}
-	return op(h, &call{ctx: r.Context(), who: p, account: p.Account.ID, body: body})
+	c := &call{ctx: r.Context(), who: p, account: p.Account.ID, body: body}
+	if err := h.authorize(c, name); err != nil {
+		return nil, err
+	}
+	return op(h, c)
 }
 
 // decode unmarshals the request body into dst, turning JSON problems into

@@ -140,8 +140,11 @@ type evalRequest struct {
 	AccountID   string // requester's account (empty when anonymous)
 	UserName    string
 	CanonicalID string
-	Action      string // e.g. "s3:GetObject"
-	Resource    string // e.g. "arn:aws:s3:::bucket/key"
+	// ARNs are the IAM ARNs the requester can be named by in a Principal
+	// element (user, role and assumed-role ARNs).
+	ARNs     []string
+	Action   string // e.g. "s3:GetObject"
+	Resource string // e.g. "arn:aws:s3:::bucket/key"
 	// Keys holds condition context keys, lowercased (e.g. "s3:prefix").
 	Keys map[string][]string
 }
@@ -220,6 +223,11 @@ func principalMatches(p *principal, r *evalRequest) bool {
 				if v == r.AccountID || v == "arn:aws:iam::"+r.AccountID+":root" ||
 					(r.UserName != "" && v == "arn:aws:iam::"+r.AccountID+":user/"+r.UserName) {
 					return true
+				}
+				for _, arn := range r.ARNs {
+					if v == arn {
+						return true
+					}
 				}
 			case "CanonicalUser":
 				if !r.Anonymous && v == r.CanonicalID {

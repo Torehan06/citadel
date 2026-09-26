@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base32"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -378,9 +379,9 @@ func createVirtualMFADevice(c *call) (obj, error) {
 	} else if ok {
 		return nil, alreadyExists("MFADevice entity at the same path and name already exists.")
 	}
-	seed := make([]byte, 20)
+	seed := make([]byte, 40)
 	_, _ = rand.Read(seed)
-	d := &VirtualMFA{Serial: serial, Seed: base64.StdEncoding.EncodeToString(seed), Created: c.now}
+	d := &VirtualMFA{Serial: serial, Seed: base32.StdEncoding.EncodeToString(seed), Created: c.now}
 	tags, err := readTags(c.f, "Tags")
 	if err != nil {
 		return nil, err
@@ -390,7 +391,7 @@ func createVirtualMFADevice(c *call) (obj, error) {
 		return nil, err
 	}
 	return obj{{"VirtualMFADevice", obj{{"SerialNumber", serial},
-		{"Base32StringSeed", d.Seed},
+		{"Base32StringSeed", base64.StdEncoding.EncodeToString([]byte(d.Seed))},
 		{"QRCodePNG", base64.StdEncoding.EncodeToString([]byte("otpauth://totp/" + serial))}}}}, nil
 }
 
