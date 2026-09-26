@@ -195,6 +195,9 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 	if sub == "" {
 		return errf(405, "MethodNotAllowed", "The specified method is not allowed against this resource.")
 	}
+	if ok, err := h.defaultBucketConfig(req, sub); ok {
+		return err
+	}
 	return errNotImplemented(m + " ?" + sub)
 }
 

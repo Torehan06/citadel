@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"net/http"
 	"time"
+
+	"citadel/internal/store"
 )
 
 // Lifecycle configuration: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html
@@ -144,8 +146,26 @@ func (h *Handler) getBucketLifecycle(req *request) error {
 	if len(rules) == 0 {
 		return &Error{Status: 404, Code: "NoSuchLifecycleConfiguration", Message: "The lifecycle configuration does not exist", Bucket: req.bucket}
 	}
+	if b.LifecycleMinSize != "" {
+		req.w.Header().Set(hdrLifecycleMinSize, b.LifecycleMinSize)
+	}
 	writeXML(req.w, http.StatusOK, lifecycleConfiguration{Rules: rules})
 	return nil
+}
+
+// hdrLifecycleMinSize carries the smallest object size lifecycle transitions
+// apply to by default. General purpose buckets default to 128 KiB.
+const hdrLifecycleMinSize = "x-amz-transition-default-minimum-object-size"
+
+func lifecycleMinSize(r *http.Request) (string, error) {
+	switch v := r.Header.Get(hdrLifecycleMinSize); v {
+	case "":
+		return "all_storage_classes_128K", nil
+	case "all_storage_classes_128K", "varies_by_storage_class":
+		return v, nil
+	default:
+		return "", errInvalidArgument("Invalid TransitionDefaultMinimumObjectSize: %s", v)
+	}
 }
 
 func (h *Handler) putBucketLifecycle(req *request) error {
@@ -160,10 +180,22 @@ func (h *Handler) putBucketLifecycle(req *request) error {
 	if err != nil {
 		return err
 	}
-	raw, _ := json.Marshal(rules)
-	if err := h.setBucketColumn(req, "lifecycle", string(raw), "PutBucketLifecycleConfiguration"); err != nil {
+	minSize, err := lifecycleMinSize(req.r)
+	if err != nil {
 		return err
 	}
+	raw, _ := json.Marshal(rules)
+	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
+		if _, err := tx.ExecContext(req.ctx, `UPDATE s3_buckets SET lifecycle = ?, lifecycle_min_size = ? WHERE name = ?`,
+			string(raw), minSize, req.bucket); err != nil {
+			return err
+		}
+		return tx.Change("s3", "PutBucketLifecycleConfiguration", req.bucket, nil)
+	})
+	if err != nil {
+		return err
+	}
+	req.w.Header().Set(hdrLifecycleMinSize, minSize)
 	req.w.WriteHeader(http.StatusOK)
 	return nil
 }

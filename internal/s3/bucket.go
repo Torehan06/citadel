@@ -51,6 +51,7 @@ func validBucketName(name string) bool {
 type createBucketConfiguration struct {
 	XMLName            xml.Name `xml:"CreateBucketConfiguration"`
 	LocationConstraint string   `xml:"LocationConstraint"`
+	Tags               []tag    `xml:"Tags>Tag"` // tag-on-create; needs s3:TagResource
 }
 
 func (h *Handler) createBucket(req *request) error {
@@ -94,6 +95,16 @@ func (h *Handler) createBucket(req *request) error {
 			return errMalformedXML()
 		}
 	}
+	tagging := ""
+	if len(cfg.Tags) > 0 {
+		if err := validateTags(cfg.Tags, 50); err != nil {
+			return err
+		}
+		if err := h.requireIdentity(req, "s3:TagResource", bucketResource(req.bucket)); err != nil {
+			return err
+		}
+		tagging = tagsJSON(cfg.Tags)
+	}
 	// A bucket lives in this region. The constraint is recorded as given and
 	// reported back by GetBucketLocation; Citadel doesn't route by it (yet).
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
@@ -112,8 +123,8 @@ func (h *Handler) createBucket(req *request) error {
 			return err
 		}
 		if _, err := tx.ExecContext(req.ctx, `
-			INSERT INTO s3_buckets(name, account_id, region, location_constraint, created, hlc, acl, ownership) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			req.bucket, req.who.Account.ID, h.region, cfg.LocationConstraint, tx.HLC().WallMs(), int64(tx.HLC()), aclJSON, ownership); err != nil {
+			INSERT INTO s3_buckets(name, account_id, region, location_constraint, created, hlc, acl, ownership, tagging) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			req.bucket, req.who.Account.ID, h.region, cfg.LocationConstraint, tx.HLC().WallMs(), int64(tx.HLC()), aclJSON, ownership, tagging); err != nil {
 			return err
 		}
 		return tx.Change("s3", "CreateBucket", req.bucket, map[string]string{
