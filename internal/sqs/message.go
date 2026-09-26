@@ -161,9 +161,6 @@ func (h *Handler) sendMessage(c *call, r *request) (map[string]any, error) {
 			return err
 		}
 		queueID = q.ID
-		if q.fifo() {
-			return &serviceError{501, "NotImplemented", "citadel: FIFO delivery is not implemented yet"}
-		}
 		if r.MessageBody == "" {
 			return fail("MissingParameter", "The request must contain the parameter MessageBody.")
 		}
@@ -180,19 +177,40 @@ func (h *Handler) sendMessage(c *call, r *request) (map[string]any, error) {
 		if len(r.MessageBody)+attrSize > q.number("MaximumMessageSize") {
 			return fail("InvalidParameterValue", "One or more parameters are invalid. Reason: Message must be shorter than %d bytes.", q.number("MaximumMessageSize"))
 		}
-		delay := intValue(r.DelaySeconds, q.number("DelaySeconds"))
+		dedup := ""
+		if q.fifo() {
+			// FIFO queues only take a queue-level delay.
+			if dedup, err = fifoParameters(q, r); err != nil {
+				return err
+			}
+		} else if r.MessageDeduplicationId != "" {
+			return fail("InvalidParameterValue", "MessageDeduplicationId is valid only for FIFO queues.")
+		}
+		delay := q.number("DelaySeconds")
+		if !q.fifo() {
+			delay = intValue(r.DelaySeconds, delay)
+		}
 		if delay < 0 || delay > 900 {
 			return fail("InvalidParameterValue", "Value %d for parameter DelaySeconds is invalid. Reason: DelaySeconds must be >= 0 and <= 900.", delay)
-		}
-		if r.MessageDeduplicationId != "" {
-			return fail("InvalidParameterValue", "MessageDeduplicationId is valid only for FIFO queues.")
 		}
 		if len(r.MessageGroupId) > 128 || !validIdentifier(r.MessageGroupId) {
 			return fail("InvalidParameterValue", "Invalid MessageGroupId.")
 		}
-		id := randomID()
 		now := h.now().UnixMilli()
-		result, err := tx.ExecContext(c.ctx, `INSERT INTO sqs_messages(queue_id,message_id,body,attrs,system_attrs,sender,sent,visible_at,group_id,dedup_id) VALUES(?,?,?,?,?,?,?,?,?,?)`, q.ID, id, r.MessageBody, jsonText(r.MessageAttributes), jsonText(r.MessageSystemAttributes), c.sender, now, now+int64(delay)*1000, r.MessageGroupId, r.MessageDeduplicationId)
+		scope := dedupScope(q, r.MessageGroupId)
+		if q.fifo() {
+			// A repeated deduplication ID is accepted but not enqueued again.
+			prior, priorSeq, found, err := duplicate(c.ctx, tx, q, scope, dedup, now)
+			if err != nil {
+				return err
+			}
+			if found {
+				out = sendResult(r, prior, priorSeq, true)
+				return nil
+			}
+		}
+		id := randomID()
+		result, err := tx.ExecContext(c.ctx, `INSERT INTO sqs_messages(queue_id,message_id,body,attrs,system_attrs,sender,sent,enqueued,visible_at,group_id,dedup_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, q.ID, id, r.MessageBody, jsonText(r.MessageAttributes), jsonText(r.MessageSystemAttributes), c.sender, now, now, now+int64(delay)*1000, r.MessageGroupId, dedup)
 		if err != nil {
 			return err
 		}
@@ -200,7 +218,12 @@ func (h *Handler) sendMessage(c *call, r *request) (map[string]any, error) {
 		if err != nil {
 			return err
 		}
-		out = sendResult(r, id, seq, false)
+		if q.fifo() {
+			if _, err = tx.ExecContext(c.ctx, `INSERT INTO sqs_dedup(queue_id,scope,dedup_id,message_id,sequence,expires) VALUES(?,?,?,?,?,?)`, q.ID, scope, dedup, id, seq, now+dedupWindow); err != nil {
+				return err
+			}
+		}
+		out = sendResult(r, id, seq, q.fifo())
 		return tx.Change("sqs", "SendMessage", q.arn(), map[string]any{"sequence": seq, "messageId": id, "body": r.MessageBody, "attributes": r.MessageAttributes, "visibleAt": now + int64(delay)*1000})
 	})
 	if err == nil {
@@ -235,16 +258,17 @@ type message struct {
 	ID, Body, Sender               string
 	Attrs, System                  map[string]attribute
 	Sent, Visible, First, Received int64
+	Enqueued                       int64
 	Count                          int
 	Receipt, Group, Dedup          string
 }
 
-const messageColumns = "seq,message_id,body,attrs,system_attrs,sender,sent,visible_at,receive_count,first_received,received,receipt,group_id,dedup_id"
+const messageColumns = "seq,message_id,body,attrs,system_attrs,sender,sent,visible_at,receive_count,first_received,received,receipt,group_id,dedup_id,enqueued"
 
 func scanMessage(row interface{ Scan(...any) error }) (message, error) {
 	var m message
 	var attrs, system string
-	err := row.Scan(&m.Seq, &m.ID, &m.Body, &attrs, &system, &m.Sender, &m.Sent, &m.Visible, &m.Count, &m.First, &m.Received, &m.Receipt, &m.Group, &m.Dedup)
+	err := row.Scan(&m.Seq, &m.ID, &m.Body, &attrs, &system, &m.Sender, &m.Sent, &m.Visible, &m.Count, &m.First, &m.Received, &m.Receipt, &m.Group, &m.Dedup, &m.Enqueued)
 	if err != nil {
 		return m, err
 	}
@@ -318,6 +342,7 @@ func (h *Handler) receiveMessage(c *call, r *request) (map[string]any, error) {
 		// Register before checking durable state, avoiding the lost-wakeup race.
 		notice := h.notifier(q.ID)
 		messages := []map[string]any{}
+		redriven := []int64{}
 		next := int64(0)
 		err = h.st.Update(c.ctx, func(tx *store.Tx) error {
 			current, err := loadQueue(tx, c, r.QueueUrl)
@@ -326,7 +351,7 @@ func (h *Handler) receiveMessage(c *call, r *request) (map[string]any, error) {
 			}
 			q = current
 			now := h.now().UnixMilli()
-			expired, err := tx.ExecContext(c.ctx, `DELETE FROM sqs_messages WHERE queue_id=? AND sent<=?`, q.ID, now-int64(q.number("MessageRetentionPeriod"))*1000)
+			expired, err := tx.ExecContext(c.ctx, `DELETE FROM sqs_messages WHERE queue_id=? AND enqueued<=?`, q.ID, now-int64(q.number("MessageRetentionPeriod"))*1000)
 			if err != nil {
 				return err
 			}
@@ -335,50 +360,63 @@ func (h *Handler) receiveMessage(c *call, r *request) (map[string]any, error) {
 					return err
 				}
 			}
-			rows, err := tx.QueryContext(c.ctx, `SELECT `+messageColumns+` FROM sqs_messages WHERE queue_id=? AND visible_at<=? ORDER BY seq LIMIT ?`, q.ID, now, max)
+			target, maxCount, err := redriveTarget(c.ctx, tx, q)
 			if err != nil {
 				return err
 			}
-			var ready []message
-			for rows.Next() {
-				m, err := scanMessage(rows)
-				if err != nil {
-					_ = rows.Close()
-					return err
-				}
-				ready = append(ready, m)
-			}
-			err = rows.Err()
-			_ = rows.Close()
-			if err != nil {
-				return err
-			}
-			for _, m := range ready {
-				m.Count++
-				if m.First == 0 {
-					m.First = now
-				}
-				m.Received = now
-				m.Visible = now + int64(visibility)*1000
-				var nonce [32]byte
-				_, _ = rand.Read(nonce[:])
-				m.Receipt = base64.RawStdEncoding.EncodeToString(nonce[:])
-				_, err = tx.ExecContext(c.ctx, `UPDATE sqs_messages SET visible_at=?,receive_count=?,first_received=?,received=?,receipt=? WHERE seq=?`, m.Visible, m.Count, m.First, now, m.Receipt, m.Seq)
+			for len(messages) < max {
+				ready, err := readyMessages(c.ctx, tx, q, now, max-len(messages))
 				if err != nil {
 					return err
 				}
-				if _, err = tx.ExecContext(c.ctx, `INSERT INTO sqs_receipts(handle,queue_id,message_seq,created) VALUES(?,?,?,?)`, m.Receipt, q.ID, m.Seq, now); err != nil {
-					return err
+				if len(ready) == 0 {
+					break
 				}
-				if err = tx.Change("sqs", "ReceiveMessage", q.arn(), map[string]any{"sequence": m.Seq, "receipt": m.Receipt, "visibleAt": m.Visible, "receiveCount": m.Count}); err != nil {
-					return err
+				moved := false
+				for _, m := range ready {
+					// A message already received maxReceiveCount times moves to
+					// the dead-letter queue on the next receive attempt.
+					if target != nil && m.Count >= maxCount {
+						if err = moveToDeadLetter(c.ctx, tx, q, target, m, now); err != nil {
+							return err
+						}
+						redriven = append(redriven, target.ID)
+						moved = true
+						continue
+					}
+					m.Count++
+					if m.First == 0 {
+						m.First = now
+					}
+					m.Received = now
+					m.Visible = now + int64(visibility)*1000
+					var nonce [32]byte
+					_, _ = rand.Read(nonce[:])
+					m.Receipt = base64.RawStdEncoding.EncodeToString(nonce[:])
+					_, err = tx.ExecContext(c.ctx, `UPDATE sqs_messages SET visible_at=?,receive_count=?,first_received=?,received=?,receipt=? WHERE seq=?`, m.Visible, m.Count, m.First, now, m.Receipt, m.Seq)
+					if err != nil {
+						return err
+					}
+					if _, err = tx.ExecContext(c.ctx, `INSERT INTO sqs_receipts(handle,queue_id,message_seq,created) VALUES(?,?,?,?)`, m.Receipt, q.ID, m.Seq, now); err != nil {
+						return err
+					}
+					if err = tx.Change("sqs", "ReceiveMessage", q.arn(), map[string]any{"sequence": m.Seq, "receipt": m.Receipt, "visibleAt": m.Visible, "receiveCount": m.Count}); err != nil {
+						return err
+					}
+					messages = append(messages, m.response(r, q.fifo()))
 				}
-				messages = append(messages, m.response(r, q.fifo()))
+				// Without a redrive, the query already returned every ready message.
+				if !moved {
+					break
+				}
 			}
 			return tx.QueryRowContext(c.ctx, `SELECT COALESCE(MIN(visible_at),0) FROM sqs_messages WHERE queue_id=? AND visible_at>?`, q.ID, now).Scan(&next)
 		})
 		if err != nil {
 			return nil, err
+		}
+		for _, id := range redriven {
+			h.notify(id)
 		}
 		if len(messages) > 0 {
 			return map[string]any{"Messages": messages}, nil
@@ -415,19 +453,21 @@ func (h *Handler) receiptOperation(c *call, op string, r *request) (map[string]a
 			return err
 		}
 		id = q.ID
+		// Every handle a message was issued keeps identifying it: AWS lets an
+		// earlier receipt delete it or change its visibility, idempotently.
 		var seq int64
 		if err = tx.QueryRowContext(c.ctx, `SELECT message_seq FROM sqs_receipts WHERE queue_id=? AND handle=?`, q.ID, r.ReceiptHandle).Scan(&seq); err != nil {
 			return fail("ReceiptHandleIsInvalid", "The input receipt handle %q is not a valid receipt handle.", r.ReceiptHandle)
 		}
 		if op == "DeleteMessage" {
-			_, err = tx.ExecContext(c.ctx, `DELETE FROM sqs_messages WHERE queue_id=? AND seq=? AND receipt=?`, q.ID, seq, r.ReceiptHandle)
+			_, err = tx.ExecContext(c.ctx, `DELETE FROM sqs_messages WHERE queue_id=? AND seq=?`, q.ID, seq)
 		} else {
 			timeout := intValue(r.VisibilityTimeout, -1)
 			if timeout < 0 || timeout > 43200 {
 				return fail("InvalidParameterValue", "VisibilityTimeout must be between 0 and 43200.")
 			}
 			var visible, received int64
-			if err = tx.QueryRowContext(c.ctx, `SELECT visible_at,received FROM sqs_messages WHERE queue_id=? AND seq=? AND receipt=?`, q.ID, seq, r.ReceiptHandle).Scan(&visible, &received); err != nil {
+			if err = tx.QueryRowContext(c.ctx, `SELECT visible_at,received FROM sqs_messages WHERE queue_id=? AND seq=?`, q.ID, seq).Scan(&visible, &received); err != nil {
 				return fail("MessageNotInflight", "The specified message does not exist or is not available for visibility timeout change.")
 			}
 			now := h.now().UnixMilli()

@@ -3,7 +3,8 @@ package sqs
 import "strings"
 
 func (h *Handler) batch(c *call, op string, r *request) (map[string]any, error) {
-	if _, err := loadQueue(h.st.DB(), c, r.QueueUrl); err != nil {
+	q, err := loadQueue(h.st.DB(), c, r.QueueUrl)
+	if err != nil {
 		return nil, err
 	}
 	if len(r.Entries) == 0 {
@@ -25,6 +26,17 @@ func (h *Handler) batch(c *call, op string, r *request) (map[string]any, error) 
 		size += len(entry.MessageBody)
 		for name, a := range entry.MessageAttributes {
 			size += len(name) + len(a.DataType) + len(a.StringValue) + len(a.BinaryValue)
+		}
+	}
+	if op == "SendMessageBatch" && q.fifo() {
+		// Missing FIFO parameters reject the whole batch, not just the entry.
+		for _, entry := range r.Entries {
+			if entry.MessageGroupId == "" {
+				return nil, fail("MissingParameter", "The request must contain the parameter MessageGroupId.")
+			}
+			if entry.MessageDeduplicationId == "" && q.Attrs["ContentBasedDeduplication"] != "true" {
+				return nil, fail("InvalidParameterValue", "The queue should either have ContentBasedDeduplication enabled or MessageDeduplicationId provided explicitly")
+			}
 		}
 	}
 	if size > 1048576 {

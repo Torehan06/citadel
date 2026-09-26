@@ -57,6 +57,10 @@ func (h *Handler) queueByName(c *call, account, name string) (*queue, error) {
 	return scanQueue(h.st.DB().QueryRowContext(c.ctx, `SELECT `+queueColumns+` FROM sqs_queues WHERE account=? AND region=? AND name=?`, account, c.region, name))
 }
 func loadQueue(db querier, c *call, raw string) (*queue, error) {
+	if raw != "" && !strings.Contains(raw, "/") {
+		// AWS also resolves a bare queue name in the caller's account.
+		return scanQueue(db.QueryRowContext(c.ctx, `SELECT `+queueColumns+` FROM sqs_queues WHERE account=? AND region=? AND name=?`, c.account, c.region, raw))
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, missingQueue()
@@ -275,7 +279,7 @@ func (h *Handler) queueOperation(c *call, op string, r *request) (map[string]any
 			attrs["LastModifiedTimestamp"] = strconv.FormatInt(q.Modified, 10)
 			var visible, delayed, inflight int
 			now := h.now().UnixMilli()
-			err = tx.QueryRowContext(c.ctx, `SELECT COALESCE(SUM(visible_at<=?),0),COALESCE(SUM(visible_at>? AND receive_count=0),0),COALESCE(SUM(visible_at>? AND receive_count>0),0) FROM sqs_messages WHERE queue_id=? AND sent>?`, now, now, now, q.ID, now-int64(q.number("MessageRetentionPeriod"))*1000).Scan(&visible, &delayed, &inflight)
+			err = tx.QueryRowContext(c.ctx, `SELECT COALESCE(SUM(visible_at<=?),0),COALESCE(SUM(visible_at>? AND receive_count=0),0),COALESCE(SUM(visible_at>? AND receive_count>0),0) FROM sqs_messages WHERE queue_id=? AND enqueued>?`, now, now, now, q.ID, now-int64(q.number("MessageRetentionPeriod"))*1000).Scan(&visible, &delayed, &inflight)
 			if err != nil {
 				return err
 			}
@@ -357,17 +361,30 @@ func (h *Handler) queueOperation(c *call, op string, r *request) (map[string]any
 				}
 			}
 			_, err = tx.ExecContext(c.ctx, `UPDATE sqs_queues SET attrs=?,modified=? WHERE id=?`, jsonText(q.Attrs), h.now().Unix(), q.ID)
+		case "AddPermission", "RemovePermission":
+			if op == "AddPermission" {
+				err = addPermission(q, r)
+			} else {
+				err = removePermission(q, r)
+			}
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(c.ctx, `UPDATE sqs_queues SET attrs=? WHERE id=?`, jsonText(q.Attrs), q.ID)
 		case "TagQueue", "UntagQueue":
 			if op == "TagQueue" {
 				if len(r.Tags) == 0 {
-					return fail("MissingParameter", "The request must contain the parameter Tags")
+					return fail("MissingParameter", "The request must contain the parameter Tags.")
 				}
 				for k, v := range r.Tags {
 					q.Tags[k] = v
 				}
+				if len(q.Tags) > 50 {
+					return fail("InvalidParameterValue", "Too many tags added for queue %s.", q.Name)
+				}
 			} else {
 				if len(r.TagKeys) == 0 {
-					return fail("InvalidParameterValue", "TagKeys must not be empty.")
+					return fail("InvalidParameterValue", "Tag keys must be between 1 and 128 characters in length.")
 				}
 				for _, k := range r.TagKeys {
 					delete(q.Tags, k)

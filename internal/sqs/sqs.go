@@ -177,7 +177,7 @@ func (h *Handler) dispatch(c *call, op string, r *request) (map[string]any, erro
 		return map[string]any{"QueueUrl": c.queueURL(q)}, nil
 	case "ListQueues":
 		return h.listQueues(c, r)
-	case "DeleteQueue", "GetQueueAttributes", "SetQueueAttributes", "ListQueueTags", "TagQueue", "UntagQueue", "PurgeQueue", "ListDeadLetterSourceQueues":
+	case "DeleteQueue", "GetQueueAttributes", "SetQueueAttributes", "ListQueueTags", "TagQueue", "UntagQueue", "PurgeQueue", "ListDeadLetterSourceQueues", "AddPermission", "RemovePermission":
 		return h.queueOperation(c, op, r)
 	default:
 		return nil, &serviceError{501, "NotImplemented", "citadel: SQS " + op + " is not implemented yet"}
