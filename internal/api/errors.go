@@ -34,9 +34,13 @@ type queryError struct {
 func WriteError(w http.ResponseWriter, r *http.Request, svc string, status int, code, msg string) {
 	reqID := w.Header().Get("x-amz-request-id")
 	switch svc {
-	case SvcDynamoDB, SvcSQS:
-		// AWS JSON 1.0: the error type travels in __type.
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+	case SvcDynamoDB, SvcSQS, SvcLogs:
+		// AWS JSON 1.0 and 1.1: the error type travels in __type.
+		ct := "application/x-amz-json-1.0"
+		if svc == SvcLogs {
+			ct = "application/x-amz-json-1.1"
+		}
+		w.Header().Set("Content-Type", ct)
 		w.Header().Set("x-amzn-ErrorType", code)
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]string{

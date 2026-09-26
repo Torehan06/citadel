@@ -367,3 +367,10 @@ func (a *Authorizer) Require(ctx context.Context, p *store.Principal, action str
 	}
 	return nil, nil
 }
+
+// RoleExists reports whether an account has a role with this name (IAM
+// names are case-insensitive). Lambda checks execution roles with it.
+func (a *Authorizer) RoleExists(ctx context.Context, account, name string) (bool, error) {
+	var r Role
+	return load(ctx, a.st.DB(), account, kRole, nameKey(name), &r)
+}

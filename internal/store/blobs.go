@@ -124,6 +124,10 @@ func (p *Pending) Commit() error {
 	return syncDir(dir)
 }
 
+// OpenTemp opens the not yet committed upload for reading, so a caller can
+// inspect the content (for example check that it unzips) before committing.
+func (p *Pending) OpenTemp() (*os.File, error) { return os.Open(p.tmp) }
+
 // Abort discards the upload. Safe to call after Commit (it does nothing then),
 // so callers can `defer p.Abort()`.
 func (p *Pending) Abort() {

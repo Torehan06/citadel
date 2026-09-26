@@ -12,6 +12,7 @@ const (
 	SvcDynamoDB = "dynamodb"
 	SvcSQS      = "sqs"
 	SvcLambda   = "lambda"
+	SvcLogs     = "logs"
 	SvcIAM      = "iam"
 	SvcSTS      = "sts"
 	SvcRoute53  = "route53"
@@ -41,6 +42,8 @@ func DetectService(r *http.Request) string {
 			return SvcDynamoDB
 		case strings.HasPrefix(t, "AmazonSQS"):
 			return SvcSQS
+		case strings.HasPrefix(t, "Logs_"):
+			return SvcLogs
 		}
 	}
 	switch {

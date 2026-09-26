@@ -20,6 +20,7 @@ import (
 	"citadel/internal/bootstrap"
 	"citadel/internal/ddb"
 	"citadel/internal/iam"
+	"citadel/internal/lambda"
 	"citadel/internal/s3"
 	"citadel/internal/sigv4"
 	"citadel/internal/sqs"
@@ -125,6 +126,17 @@ func serve(args []string) error {
 	srv.Handle(api.SvcS3, s3Handler)
 	srv.Handle(api.SvcDynamoDB, ddbHandler)
 	srv.Handle(api.SvcSQS, sqsHandler)
+	lambdaHandler := lambda.New(st, verifier, *region, *dataDir, logger)
+	lambdaHandler.IAM = authz
+	lambdaHandler.S3 = s3Handler
+	lambdaHandler.SQS = sqsHandler
+	defer lambdaHandler.Close()
+	srv.Handle(api.SvcLambda, lambdaHandler)
+	srv.Handle(api.SvcLogs, lambdaHandler.Logs())
+	lambdaHandler.StartAsync()
+	if err := lambdaHandler.StartPollers(context.Background()); err != nil {
+		return fmt.Errorf("start event source mappings: %w", err)
+	}
 
 	httpSrv := &http.Server{
 		Addr:              *listen,
