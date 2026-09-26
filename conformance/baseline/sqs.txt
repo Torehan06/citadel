@@ -2,6 +2,7 @@ tests/test_sqs/test_sqs.py::test_add_permission_errors
 tests/test_sqs/test_sqs.py::test_batch_change_message_visibility_on_old_message
 tests/test_sqs/test_sqs.py::test_change_message_visibility_on_old_message
 tests/test_sqs/test_sqs.py::test_change_message_visibility_on_visible_message
+tests/test_sqs/test_sqs.py::test_create_fifo_queue
 tests/test_sqs/test_sqs.py::test_create_fifo_queue_fail
 tests/test_sqs/test_sqs.py::test_create_fifo_queue_invalid_name[!@\xa3$%^&*()queue]
 tests/test_sqs/test_sqs.py::test_create_fifo_queue_invalid_name[/my/test]
@@ -22,9 +23,11 @@ tests/test_sqs/test_sqs.py::test_dedupe_fifo
 tests/test_sqs/test_sqs.py::test_delete_message_batch_with_duplicates
 tests/test_sqs/test_sqs.py::test_delete_message_batch_with_invalid_receipt_id
 tests/test_sqs/test_sqs.py::test_delete_message_batch_with_zero_entries
+tests/test_sqs/test_sqs.py::test_delete_message_from_unknown_url
 tests/test_sqs/test_sqs.py::test_delete_message_twice_using_same_receipt_handle
 tests/test_sqs/test_sqs.py::test_delete_message_using_old_receipt_handle
 tests/test_sqs/test_sqs.py::test_delete_queue
+tests/test_sqs/test_sqs.py::test_delete_queue_error_not_exists
 tests/test_sqs/test_sqs.py::test_fifo_dedupe_error_no_message_dedupe_id
 tests/test_sqs/test_sqs.py::test_fifo_dedupe_error_no_message_dedupe_id_batch
 tests/test_sqs/test_sqs.py::test_fifo_dedupe_error_no_message_group_id
@@ -46,6 +49,7 @@ tests/test_sqs/test_sqs.py::test_fifo_send_receive_message_with_attribute_name[S
 tests/test_sqs/test_sqs.py::test_fifo_send_receive_message_with_attribute_name[SentTimestamp]
 tests/test_sqs/test_sqs.py::test_fifo_send_receive_message_with_attribute_name[SequenceNumber]
 tests/test_sqs/test_sqs.py::test_get_queue_attributes
+tests/test_sqs/test_sqs.py::test_get_queue_attributes_error_not_exists
 tests/test_sqs/test_sqs.py::test_get_queue_attributes_errors
 tests/test_sqs/test_sqs.py::test_get_queue_attributes_no_param
 tests/test_sqs/test_sqs.py::test_get_queue_attributes_template_response_validation
@@ -55,6 +59,7 @@ tests/test_sqs/test_sqs.py::test_get_queue_with_prefix
 tests/test_sqs/test_sqs.py::test_get_unknown_queue_by_name
 tests/test_sqs/test_sqs.py::test_is_empty_redrive_policy_returns_false_for_valid_policy_format
 tests/test_sqs/test_sqs.py::test_is_empty_redrive_policy_returns_true_for_empty_and_falsy_values
+tests/test_sqs/test_sqs.py::test_list_queue_tags_errors
 tests/test_sqs/test_sqs.py::test_max_number_of_messages_invalid_param
 tests/test_sqs/test_sqs.py::test_maximum_message_size_attribute_default
 tests/test_sqs/test_sqs.py::test_maximum_message_size_attribute_fails_for_invalid_values
@@ -120,8 +125,10 @@ tests/test_sqs/test_sqs.py::test_set_queue_attribute_empty_policy_removes_attr
 tests/test_sqs/test_sqs.py::test_set_queue_attribute_empty_redrive_removes_attr
 tests/test_sqs/test_sqs.py::test_set_queue_attributes
 tests/test_sqs/test_sqs.py::test_tag_queue_errors
+tests/test_sqs/test_sqs.py::test_tag_unknown_queue
 tests/test_sqs/test_sqs.py::test_tags
 tests/test_sqs/test_sqs.py::test_untag_queue_errors
+tests/test_sqs/test_sqs.py::test_untag_unknown_queue
 tests/test_sqs/test_sqs.py::test_wait_time_seconds_invalid_param
 tests/test_sqs/test_sqs_message_attributes.py::test_message_attributes_should_not_include_system_attributes[.*]
 tests/test_sqs/test_sqs_message_attributes.py::test_message_attributes_should_not_include_system_attributes[All]
