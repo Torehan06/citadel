@@ -26,17 +26,22 @@ type Config struct {
 }
 
 type Server struct {
-	cfg      Config
-	started  time.Time
-	handlers map[string]http.Handler
+	cfg       Config
+	started   time.Time
+	handlers  map[string]http.Handler
+	internals map[string]http.Handler // path prefix under /_citadel/ -> handler
 }
 
 func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{cfg: cfg, started: time.Now(), handlers: map[string]http.Handler{}}
+	return &Server{cfg: cfg, started: time.Now(), handlers: map[string]http.Handler{}, internals: map[string]http.Handler{}}
 }
+
+// HandleInternal serves a path prefix under /_citadel/ (for example Lambda's
+// code download URLs, which are presigned and so carry no SigV4 header).
+func (s *Server) HandleInternal(prefix string, h http.Handler) { s.internals[prefix] = h }
 
 // Handle registers the handler for one AWS service (use the Svc* constants).
 // Services without a handler answer NotImplemented in their own wire format.
@@ -83,6 +88,12 @@ func (s *Server) internal(w http.ResponseWriter, r *http.Request) {
 			"uptime":  time.Since(s.started).Round(time.Second).String(),
 		})
 	default:
+		for prefix, h := range s.internals {
+			if strings.HasPrefix(r.URL.Path, prefix) {
+				h.ServeHTTP(w, r)
+				return
+			}
+		}
 		http.NotFound(w, r)
 	}
 }

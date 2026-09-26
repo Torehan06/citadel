@@ -2,7 +2,10 @@ module citadel
 
 go 1.25.0
 
-require modernc.org/sqlite v1.59.0
+require (
+	github.com/tetratelabs/wazero v1.12.0
+	modernc.org/sqlite v1.59.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

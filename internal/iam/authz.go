@@ -367,3 +367,15 @@ func (a *Authorizer) Require(ctx context.Context, p *store.Principal, action str
 	}
 	return nil, nil
 }
+
+// RoleByARN returns the role an ARN names in account, or nil if there is none
+// (other services check execution roles with it, e.g. Lambda's CreateFunction).
+func (a *Authorizer) RoleByARN(ctx context.Context, account, arn string) (*Role, error) {
+	name := arn[strings.LastIndexByte(arn, '/')+1:]
+	var r Role
+	ok, err := load(ctx, a.st.DB(), account, kRole, nameKey(name), &r)
+	if err != nil || !ok || r.ARN != arn {
+		return nil, err
+	}
+	return &r, nil
+}

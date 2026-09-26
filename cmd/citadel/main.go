@@ -20,6 +20,8 @@ import (
 	"citadel/internal/bootstrap"
 	"citadel/internal/ddb"
 	"citadel/internal/iam"
+	"citadel/internal/lambda"
+	"citadel/internal/logs"
 	"citadel/internal/s3"
 	"citadel/internal/sigv4"
 	"citadel/internal/sqs"
@@ -125,6 +127,30 @@ func serve(args []string) error {
 	srv.Handle(api.SvcS3, s3Handler)
 	srv.Handle(api.SvcDynamoDB, ddbHandler)
 	srv.Handle(api.SvcSQS, sqsHandler)
+	logsHandler := logs.New(st, verifier, *region, logger)
+	logsHandler.IAM = authz
+	srv.Handle(api.SvcLogs, logsHandler)
+	lambdaHandler, err := lambda.New(st, verifier, *region, *dataDir, logger)
+	if err != nil {
+		return fmt.Errorf("lambda runtime: %w", err)
+	}
+	lambdaHandler.IAM, lambdaHandler.Logs, lambdaHandler.S3, lambdaHandler.SQS = authz, logsHandler, s3Handler, sqsHandler
+	srv.Handle(api.SvcLambda, lambdaHandler)
+	srv.HandleInternal("/_citadel/lambda/", lambdaHandler.Internal())
+	s3Handler.Events = s3.Destinations{
+		QueueExists: func(ctx context.Context, account, region, name string) bool {
+			_, err := sqsHandler.Call(ctx, account, region, "GetQueueUrl", map[string]any{"QueueName": name})
+			return err == nil
+		},
+		SendMessage: func(ctx context.Context, account, region, name, body string) error {
+			_, err := sqsHandler.Call(ctx, account, region, "SendMessage", map[string]any{"QueueUrl": sqs.QueueURL(account, name), "MessageBody": body})
+			return err
+		},
+		CanInvoke: func(ctx context.Context, account, region, function, sourceARN, sourceAccount string) bool {
+			return lambdaHandler.AllowsService(ctx, account, region, function, "s3.amazonaws.com", sourceARN, sourceAccount)
+		},
+		InvokeAsync: lambdaHandler.EnqueueEvent,
+	}
 
 	httpSrv := &http.Server{
 		Addr:              *listen,
@@ -137,6 +163,8 @@ func serve(args []string) error {
 	if *gcInterval > 0 {
 		st.StartSweeper(ctx, *gcInterval, *gcGrace, logger)
 	}
+	lambdaHandler.Start(ctx)
+	s3Handler.StartNotifications(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {

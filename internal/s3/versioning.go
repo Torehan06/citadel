@@ -172,9 +172,9 @@ func writeObjectTx(req *request, tx *store.Tx, o objectRow) (string, error) {
 	if err := insertVersionTx(req, tx, o, false); err != nil {
 		return "", err
 	}
-	return o.VersionID, tx.Change("s3", "PutObject", req.bucket+"/"+o.Key, map[string]any{
-		"version": o.VersionID, "blob": o.Blob, "parts": len(o.Parts), "size": o.Size, "etag": o.ETag,
-	})
+	return o.VersionID, tx.Change("s3", "PutObject", req.bucket+"/"+o.Key, eventFields(req, map[string]any{
+		"version": o.VersionID, "blob": o.Blob, "parts": len(o.Parts), "size": o.Size, "etag": o.ETag, "event": createdEvent(req),
+	}))
 }
 
 // writeObject is writeObjectTx in its own transaction.
@@ -223,7 +223,7 @@ func deleteObjectTx(req *request, tx *store.Tx, key, versionID string) (deleteOu
 			}
 		}
 		return deleteOutcome{VersionID: versionID, DeleteMarker: marker == 1},
-			tx.Change("s3", "DeleteObjectVersion", resource, map[string]any{"version": versionID, "marker": marker == 1})
+			tx.Change("s3", "DeleteObjectVersion", resource, eventFields(req, map[string]any{"version": versionID, "marker": marker == 1}))
 	}
 
 	if state == "" {
@@ -233,7 +233,7 @@ func deleteObjectTx(req *request, tx *store.Tx, key, versionID string) (deleteOu
 			return deleteOutcome{}, err
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			return deleteOutcome{}, tx.Change("s3", "DeleteObject", resource, map[string]string{"version": nullVersion})
+			return deleteOutcome{}, tx.Change("s3", "DeleteObject", resource, eventFields(req, map[string]any{"version": nullVersion}))
 		}
 		return deleteOutcome{}, nil
 	}
@@ -246,7 +246,7 @@ func deleteObjectTx(req *request, tx *store.Tx, key, versionID string) (deleteOu
 		return deleteOutcome{}, err
 	}
 	return deleteOutcome{VersionID: vid, DeleteMarker: true},
-		tx.Change("s3", "PutDeleteMarker", resource, map[string]string{"version": vid})
+		tx.Change("s3", "PutDeleteMarker", resource, eventFields(req, map[string]any{"version": vid}))
 }
 
 func (h *Handler) deleteObject(req *request) error {

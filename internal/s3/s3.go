@@ -23,6 +23,8 @@ type Handler struct {
 	// IAM enforces identity policies for IAM users and role sessions; nil
 	// allows every authenticated caller everything its account may do.
 	IAM *iam.Authorizer
+	// Events delivers bucket event notifications to other services.
+	Events Destinations
 }
 
 func New(st *store.Store, v *sigv4.Verifier, region string, log *slog.Logger) *Handler {
@@ -182,6 +184,10 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.putBucketLifecycle(req)
 	case sub == "lifecycle" && m == http.MethodDelete:
 		return h.deleteBucketLifecycle(req)
+	case sub == "notification" && m == http.MethodGet:
+		return h.getBucketNotification(req)
+	case sub == "notification" && m == http.MethodPut:
+		return h.putBucketNotification(req)
 	case sub == "" && m == http.MethodPost:
 		return errNotImplemented("PostObject (browser-based upload)")
 	}

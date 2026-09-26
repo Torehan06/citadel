@@ -15,6 +15,7 @@ const (
 	SvcIAM      = "iam"
 	SvcSTS      = "sts"
 	SvcRoute53  = "route53"
+	SvcLogs     = "logs"
 	SvcUnknown  = ""
 )
 
@@ -22,7 +23,7 @@ const (
 //
 // Order of evidence (see ARCHITECTURE.md, D4):
 //  1. SigV4 credential scope in the Authorization header or presigned query.
-//  2. X-Amz-Target header (JSON 1.0 protocols: DynamoDB, SQS).
+//  2. X-Amz-Target header (JSON protocols: DynamoDB, SQS, CloudWatch Logs).
 //  3. REST path prefixes (Lambda, Route 53).
 //  4. Everything else is S3, which is also the only API that accepts
 //     anonymous requests.
@@ -41,6 +42,8 @@ func DetectService(r *http.Request) string {
 			return SvcDynamoDB
 		case strings.HasPrefix(t, "AmazonSQS"):
 			return SvcSQS
+		case strings.HasPrefix(t, "Logs_"):
+			return SvcLogs
 		}
 	}
 	switch {

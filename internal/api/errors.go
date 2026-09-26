@@ -43,6 +43,12 @@ func WriteError(w http.ResponseWriter, r *http.Request, svc string, status int, 
 			"__type":  "com.amazonaws.citadel#" + code,
 			"message": msg,
 		})
+	case SvcLogs:
+		// AWS JSON 1.1.
+		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+		w.Header().Set("x-amzn-ErrorType", code)
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"__type": code, "message": msg})
 	case SvcLambda:
 		// REST-JSON: type in a header and in the body.
 		w.Header().Set("Content-Type", "application/json")

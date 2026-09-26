@@ -235,3 +235,23 @@ func intValue(p *int, fallback int) int {
 	}
 	return fallback
 }
+
+// Call runs one SQS operation (JSON-protocol names and shapes) for account in
+// region without an HTTP request. Other services use it when they act on an
+// account's queues: Lambda event source mappings, destinations and S3 event
+// notifications. The caller has already authorized the action.
+func (h *Handler) Call(ctx context.Context, account, region, op string, in map[string]any) (map[string]any, error) {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	var req request
+	if err := json.Unmarshal(b, &req); err != nil {
+		return nil, fail("InvalidParameterValue", "Invalid request: %v", err)
+	}
+	c := &call{ctx: ctx, account: account, region: region, host: "sqs." + region + ".localhost", scheme: "http", sender: account}
+	return h.dispatch(c, op, &req)
+}
+
+// QueueURL is the URL Call accepts for a queue ARN's account and name.
+func QueueURL(account, name string) string { return "http://sqs.localhost/" + account + "/" + name }
