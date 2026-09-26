@@ -175,3 +175,10 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Concept: event-driven glue is a reader of the change log plus a poller. S3 doesn't call Lambda inline: the write commits, and a dispatcher later turns the log row into an event. That is why delivery is at least once and never blocks the upload.
 - Next: M6 exit check.
 - Requests for the human: wire the Lambda smoke into the harness. Add a `lambda)` case to `harness/smoke.sh` that runs `examples/functions/hello-go/smoke.sh` (it already prints PASS/FAIL lines and reads `CITADEL_ENDPOINT`), then add `smoke-lambda` to `conformance/suites`. It needs Go on PATH to build the function.
+
+### 2026-09-26 16:42 · claude-opus-5.5 · M6 · M6 done: lambda 1 → 69
+- Did: verified the exit criteria and marked M6 [done]. Ratchet green (exit 1, no change) on the clean committed tree. make check passes. Credential scan clean. Pushed.
+- Conformance, per enabled suite (session start → end): s3 383 → 383; smoke-s3 12 → 12; ddb 800 → 800; sqs 137 → 137; iam 281 → 281; lambda 1 → 69 (exit needs ≥ 45). Unit tests 149 → 166. hello-go smoke 17/17 (`examples/functions/hello-go/smoke.sh`). An SQS message starts the function about 2 ms after SendMessage returns (the exit bound is 2 s). Earlier exits still hold: smoke-s3 12/12, s3 ≥ 300, ddb ≥ 450, sqs ≥ 110, iam ≥ 150.
+- Concept: Citadel now has compute. Code runs where the data lives, triggered by API calls, queue messages or bucket changes, each run in a fresh WebAssembly sandbox.
+- Next: M7 (Terraform). It will need IAM PassRole checks on CreateFunction, and the provider's read-after-write of every Lambda field.
+- Requests for the human: (1) wire `smoke-lambda` into harness/smoke.sh and conformance/suites (details in the previous entry); (2) provide the aws CLI v2 in the cloud environment's setup script.
