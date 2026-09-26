@@ -19,11 +19,11 @@ import (
 	"github.com/tetratelabs/wazero/sys"
 )
 
-// runtime runs WASI preview 1 command modules. Compiled modules are cached on
+// wasmRuntime runs WASI preview 1 command modules. Compiled modules are cached on
 // disk (wazero's compilation cache under <data>/wasm-cache) and in memory,
 // keyed by code hash and memory limit, under a size cap. Every invocation
 // gets a fresh module instance.
-type runtime struct {
+type wasmRuntime struct {
 	log      *slog.Logger
 	cache    wazero.CompilationCache
 	mu       sync.Mutex
@@ -41,8 +41,8 @@ type compiled struct {
 // maxCompiled caps the wasm bytes whose compiled forms stay in memory.
 const maxCompiled = 64 << 20
 
-func newRuntime(dataDir string, log *slog.Logger) *runtime {
-	r := &runtime{log: log, runtimes: map[uint32]wazero.Runtime{}, modules: map[string]*compiled{}}
+func newRuntime(dataDir string, log *slog.Logger) *wasmRuntime {
+	r := &wasmRuntime{log: log, runtimes: map[uint32]wazero.Runtime{}, modules: map[string]*compiled{}}
 	if dataDir != "" {
 		dir := filepath.Join(dataDir, "wasm-cache")
 		if err := os.MkdirAll(dir, 0o755); err == nil {
@@ -59,7 +59,7 @@ func newRuntime(dataDir string, log *slog.Logger) *runtime {
 	return r
 }
 
-func (r *runtime) close() {
+func (r *wasmRuntime) close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, rt := range r.runtimes {
@@ -72,7 +72,7 @@ func (r *runtime) close() {
 
 // runtimeFor returns the wazero runtime enforcing a memory limit. WASI is
 // instantiated in it once.
-func (r *runtime) runtimeFor(ctx context.Context, pages uint32) (wazero.Runtime, error) {
+func (r *wasmRuntime) runtimeFor(ctx context.Context, pages uint32) (wazero.Runtime, error) {
 	if rt := r.runtimes[pages]; rt != nil {
 		return rt, nil
 	}
@@ -91,7 +91,7 @@ func (r *runtime) runtimeFor(ctx context.Context, pages uint32) (wazero.Runtime,
 
 // compile returns the compiled module for code, compiling it on a miss. It
 // reports whether it compiled (a cold start).
-func (r *runtime) compile(ctx context.Context, codeKey string, pages uint32, wasm func() ([]byte, error)) (wazero.Runtime, wazero.CompiledModule, bool, error) {
+func (r *wasmRuntime) compile(ctx context.Context, codeKey string, pages uint32, wasm func() ([]byte, error)) (wazero.Runtime, wazero.CompiledModule, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rt, err := r.runtimeFor(ctx, pages)
@@ -119,7 +119,7 @@ func (r *runtime) compile(ctx context.Context, codeKey string, pages uint32, was
 
 // evict drops least recently used modules until the cache is under its cap.
 // Closing a compiled module is safe while instances made from it still run.
-func (r *runtime) evict() {
+func (r *wasmRuntime) evict() {
 	for r.size > maxCompiled && len(r.modules) > 1 {
 		var oldest string
 		for k, c := range r.modules {
@@ -161,7 +161,7 @@ type runOutcome struct {
 	memoryUsed uint32 // bytes, when known
 }
 
-func (r *runtime) run(ctx context.Context, s runSpec) (runOutcome, error) {
+func (r *wasmRuntime) run(ctx context.Context, s runSpec) (runOutcome, error) {
 	var out runOutcome
 	start := time.Now()
 	rt, mod, cold, err := r.compile(ctx, s.codeKey, s.pages, s.wasm)

@@ -23,6 +23,9 @@ type Handler struct {
 	// IAM enforces identity policies for IAM users and role sessions; nil
 	// allows every authenticated caller everything its account may do.
 	IAM *iam.Authorizer
+	// Notify delivers bucket event notifications to SQS and Lambda; nil
+	// rejects notification configurations with destinations.
+	Notify NotifyTargets
 }
 
 func New(st *store.Store, v *sigv4.Verifier, region string, log *slog.Logger) *Handler {
@@ -176,6 +179,10 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.putBucketCORS(req)
 	case sub == "cors" && m == http.MethodDelete:
 		return h.deleteBucketCORS(req)
+	case sub == "notification" && m == http.MethodGet:
+		return h.getBucketNotification(req)
+	case sub == "notification" && m == http.MethodPut:
+		return h.putBucketNotification(req)
 	case sub == "lifecycle" && m == http.MethodGet:
 		return h.getBucketLifecycle(req)
 	case sub == "lifecycle" && m == http.MethodPut:

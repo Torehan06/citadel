@@ -130,6 +130,7 @@ func serve(args []string) error {
 	lambdaHandler.IAM = authz
 	lambdaHandler.S3 = s3Handler
 	lambdaHandler.SQS = sqsHandler
+	s3Handler.Notify = lambdaHandler.NotificationTargets()
 	defer lambdaHandler.Close()
 	srv.Handle(api.SvcLambda, lambdaHandler)
 	srv.Handle(api.SvcLogs, lambdaHandler.Logs())
@@ -146,6 +147,9 @@ func serve(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if err := s3Handler.StartNotifier(ctx); err != nil {
+		return fmt.Errorf("start s3 notifications: %w", err)
+	}
 	if *gcInterval > 0 {
 		st.StartSweeper(ctx, *gcInterval, *gcGrace, logger)
 	}

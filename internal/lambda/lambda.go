@@ -45,7 +45,7 @@ type Handler struct {
 	// SQS feeds event source mappings; nil leaves mappings idle.
 	SQS QueueClient
 
-	rt      *runtime
+	rt      *wasmRuntime
 	running sync.Map // function key -> *int64 in-flight invocations
 
 	mu      sync.Mutex

@@ -12,6 +12,7 @@
 //   - {"name": "Ada"}            answers {"message": "Hello, Ada!"}
 //   - {"Records": [...]}         (SQS, S3) logs each record, answers {"processed": n}
 //   - {"fail": "why"}            reports an error: prints {"errorType", "errorMessage"}, exits 1
+//   - {"sleep_ms": 5000}         sleeps first (to see the function's Timeout at work)
 package main
 
 import (
@@ -19,11 +20,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 type event struct {
 	Name    string            `json:"name"`
 	Fail    string            `json:"fail"`
+	SleepMS int               `json:"sleep_ms"`
 	Records []json.RawMessage `json:"Records"`
 }
 
@@ -40,6 +43,7 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "hello-go: %s version %s got %d bytes\n",
 		os.Getenv("AWS_LAMBDA_FUNCTION_NAME"), os.Getenv("AWS_LAMBDA_FUNCTION_VERSION"), len(raw))
+	time.Sleep(time.Duration(ev.SleepMS) * time.Millisecond)
 	switch {
 	case ev.Fail != "":
 		fail("HelloError", ev.Fail)
