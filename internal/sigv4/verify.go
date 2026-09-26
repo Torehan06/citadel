@@ -26,6 +26,11 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
+// Errorf builds a verification error with an HTTP status and AWS error code.
+func Errorf(status int, code, format string, args ...any) *Error {
+	return errorf(status, code, format, args...)
+}
+
 func errorf(status int, code, format string, args ...any) *Error {
 	return &Error{Status: status, Code: code, Message: fmt.Sprintf(format, args...)}
 }
@@ -46,6 +51,11 @@ type Verifier struct {
 	// MaxBufferedBody bounds how much of a body is read into memory to hash
 	// it when the client didn't send X-Amz-Content-Sha256 (non-S3 services).
 	MaxBufferedBody int64
+	// Session, when set, is called for every request whose signature checked
+	// out (Auth.SessionToken holds X-Amz-Security-Token, possibly empty). It
+	// rejects temporary credentials whose token is missing, wrong or expired
+	// by returning an *Error.
+	Session func(ctx context.Context, a *Auth) error
 }
 
 // Auth describes a request whose signature checked out.
@@ -63,6 +73,8 @@ type Auth struct {
 	Streaming bool
 	// DecodedLength is X-Amz-Decoded-Content-Length for streaming bodies, else -1.
 	DecodedLength int64
+	// SessionToken is X-Amz-Security-Token, sent with temporary credentials.
+	SessionToken string
 }
 
 // IsSigned reports whether the request carries any SigV4 signature.
@@ -138,11 +150,32 @@ func (v *Verifier) now() time.Time {
 // failures surface as *Error from r.Body.Read.
 func (v *Verifier) Verify(r *http.Request) (*Auth, error) {
 	q := r.URL.Query()
+	var (
+		auth  *Auth
+		err   error
+		token string
+	)
 	switch {
 	case r.Header.Get("Authorization") != "":
-		return v.verifyHeader(r)
+		auth, err = v.verifyHeader(r)
+		token = r.Header.Get("X-Amz-Security-Token")
 	case q.Get("X-Amz-Credential") != "" || q.Get("X-Amz-Signature") != "" || q.Get("X-Amz-Algorithm") != "":
-		return v.verifyPresigned(r)
+		auth, err = v.verifyPresigned(r)
+		token = q.Get("X-Amz-Security-Token")
+	}
+	if auth != nil || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		auth.SessionToken = token
+		if v.Session != nil {
+			if err := v.Session(r.Context(), auth); err != nil {
+				return nil, err
+			}
+		}
+		return auth, nil
+	}
+	switch {
 	case q.Get("AWSAccessKeyId") != "" && q.Get("Signature") != "":
 		return nil, errorf(400, "InvalidRequest",
 			"The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.")

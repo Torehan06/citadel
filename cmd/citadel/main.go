@@ -19,6 +19,7 @@ import (
 	"citadel/internal/api"
 	"citadel/internal/bootstrap"
 	"citadel/internal/ddb"
+	"citadel/internal/iam"
 	"citadel/internal/s3"
 	"citadel/internal/sigv4"
 	"citadel/internal/sqs"
@@ -110,6 +111,10 @@ func serve(args []string) error {
 		Region: *region, DataDir: *dataDir, Version: version,
 		Bootstrap: boot, Conformance: *conformance, Logger: logger,
 	})
+	iamHandler := iam.New(st, verifier, *region, logger)
+	verifier.Session = iamHandler.CheckSession
+	srv.Handle(api.SvcIAM, iamHandler)
+	srv.Handle(api.SvcSTS, iamHandler.STS())
 	srv.Handle(api.SvcS3, s3.New(st, verifier, *region, logger))
 	srv.Handle(api.SvcDynamoDB, ddb.New(st, verifier, *region, logger))
 	srv.Handle(api.SvcSQS, sqs.New(st, verifier, *region, logger))

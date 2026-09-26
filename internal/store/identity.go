@@ -21,6 +21,15 @@ type Principal struct {
 	AccessKey string
 	UserName  string
 	Account   Account
+	// Kind is "root" for bootstrap identities (they act as their account's
+	// root user), "user" for an IAM user's key and "session" for STS
+	// temporary credentials.
+	Kind string
+	// SessionToken and Expires (unix ms) are set for session credentials.
+	SessionToken string
+	Expires      int64
+	// Session is the JSON description of an assumed-role session.
+	Session string
 }
 
 // SeedIdentities upserts the bootstrap accounts and access keys. Seeding is
@@ -62,10 +71,12 @@ var ErrNotFound = errors.New("store: not found")
 // LookupKey returns the secret and principal for an active access key.
 func (s *Store) LookupKey(ctx context.Context, accessKey string) (secret string, p Principal, err error) {
 	err = s.r.QueryRowContext(ctx, `
-		SELECT k.secret_key, k.user_name, a.id, a.canonical_id, a.display_name, a.email
+		SELECT k.secret_key, k.user_name, k.kind, k.session_token, k.expires, k.principal,
+			a.id, a.canonical_id, a.display_name, a.email
 		FROM access_keys k JOIN accounts a ON a.id = k.account_id
 		WHERE k.access_key = ? AND k.status = 'Active'`, accessKey).
-		Scan(&secret, &p.UserName, &p.Account.ID, &p.Account.CanonicalID, &p.Account.DisplayName, &p.Account.Email)
+		Scan(&secret, &p.UserName, &p.Kind, &p.SessionToken, &p.Expires, &p.Session,
+			&p.Account.ID, &p.Account.CanonicalID, &p.Account.DisplayName, &p.Account.Email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", Principal{}, ErrNotFound
 	}
