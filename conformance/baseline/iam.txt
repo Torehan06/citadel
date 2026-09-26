@@ -1,0 +1,3 @@
+tests/test_iam/test_iam.py::test_policy_list_config_discovered_resources
+tests/test_iam/test_iam.py::test_role_list_config_discovered_resources
+tests/test_iam/test_iam.py::test_tag_non_existant_policy
