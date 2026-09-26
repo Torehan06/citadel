@@ -72,6 +72,7 @@ type tableDesc struct {
 	Tags                 []tagKV     `json:"Tags,omitempty"`
 	DeletionProtection   bool        `json:"DeletionProtectionEnabled,omitempty"`
 	TableClass           string      `json:"TableClass,omitempty"`
+	PITR                 *pitrState  `json:"PITR,omitempty"`
 	NextIndexID          int         `json:"NextIndexID"`
 }
 
@@ -476,9 +477,7 @@ func (h *Handler) describe(c *call, t *table, status string) (map[string]any, er
 		d["LatestStreamLabel"] = t.created.UTC().Format("2006-01-02T15:04:05.000")
 		d["LatestStreamArn"] = h.arn(t.account, t.desc.TableName) + "/stream/" + d["LatestStreamLabel"].(string)
 	}
-	if t.desc.DeletionProtection {
-		d["DeletionProtectionEnabled"] = true
-	}
+	d["DeletionProtectionEnabled"] = t.desc.DeletionProtection
 	if t.desc.TableClass != "" {
 		d["TableClassSummary"] = map[string]any{"TableClass": t.desc.TableClass}
 	}
