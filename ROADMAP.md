@@ -69,13 +69,13 @@ Exit: `sqs` ≥ 110 passing.
 Conformance: add `iam` to `conformance/suites`.
 Exit: `iam` ≥ 150 passing; no `s3` or `ddb` regressions from enforcement.
 
-## M6 — Lambda on WebAssembly
-- [ ] Lambda API: Create / Get / List / Update (code + configuration) / Delete function, versions, aliases, tags, concurrency settings
-- [ ] Runtime: wazero, `provided.al2023` zips with `bootstrap.wasm`; stdin event, stdout response, stderr logs; timeout and memory limits; compiled-module cache
-- [ ] Invoke: RequestResponse, Event (async queue), DryRun; error payloads (`FunctionError`)
-- [ ] Log streams under `/aws/lambda/<fn>` (minimal CloudWatch Logs API: DescribeLogStreams, GetLogEvents, FilterLogEvents)
-- [ ] SQS event source mappings; S3 event notifications to Lambda and SQS (from the change log)
-- [ ] `examples/functions/hello-go` (GOOS=wasip1) and a smoke step: `aws lambda invoke` returns its payload
+## M6 — Lambda on WebAssembly [done]
+- [x] Lambda API: Create / Get / List / Update (code + configuration) / Delete function, versions, aliases, tags, concurrency settings
+- [x] Runtime: wazero, `provided.al2023` zips with `bootstrap.wasm`; stdin event, stdout response, stderr logs; timeout and memory limits; compiled-module cache
+- [x] Invoke: RequestResponse, Event (async queue), DryRun; error payloads (`FunctionError`)
+- [x] Log streams under `/aws/lambda/<fn>` (minimal CloudWatch Logs API: DescribeLogStreams, GetLogEvents, FilterLogEvents)
+- [x] SQS event source mappings; S3 event notifications to Lambda and SQS (from the change log)
+- [x] `examples/functions/hello-go` (GOOS=wasip1) and a smoke step: `aws lambda invoke` returns its payload
 Conformance: add `lambda` to `conformance/suites`.
 Exit: `lambda` ≥ 45 passing (the Docker-based invoke tests stay red, which is expected); the hello-go smoke passes; an SQS message triggers the function within 2 s.
 

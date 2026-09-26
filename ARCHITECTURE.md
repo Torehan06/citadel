@@ -71,12 +71,13 @@ This document is the contract agents build against. Sections are self-contained,
 | DynamoDB | JSON 1.0 | `POST /`, `X-Amz-Target`, `application/x-amz-json-1.0` |
 | SQS | JSON 1.0 (and legacy query) | Current SDKs use JSON. Accept query (`Action=`) too for old clients. |
 | IAM, STS | Query (form POST, XML responses) | `Action=CreateRole&Version=2010-05-08` |
-| Lambda | REST-JSON | `/2015-03-31/functions/...` |
+| Lambda | REST-JSON | `/2015-03-31/functions/...` (and the dated prefixes of later APIs: tags, concurrency, event invoke configs, function URLs) |
+| CloudWatch Logs | JSON 1.1 | `POST /`, `X-Amz-Target: Logs_20140328.*`. Only what reading function logs needs. |
 | Route 53 | REST-XML | `/2013-04-01/hostedzone/...` |
 
 **Errors.** Each protocol has its own error envelope (`internal/api/errors.go`), and SDKs parse these to raise typed exceptions. Operations that don't exist yet answer **501 NotImplemented** at once. SDKs don't retry 501. A 500 would trigger retries with backoff and slow every conformance run to a crawl.
 
-**Internal endpoints** live under `/_citadel/` (not a valid bucket name): `healthz`, `metrics`, and later the replication APIs. With `--conformance`, the region also serves moto's `/moto-api/reset`. It must wipe all service state and do nothing else.
+**Internal endpoints** live under `/_citadel/` (not a valid bucket name): `healthz`, `metrics`, Lambda's signed code-download URLs (`/_citadel/lambda/code/<blob>`) and function URLs (`/_citadel/lambda/url/<id>/`), and later the replication APIs. With `--conformance`, the region also serves moto's `/moto-api/reset`. It must wipe all service state and do nothing else.
 
 ---
 
@@ -168,15 +169,17 @@ Global state covers accounts, users, keys, roles, policies, the region registry,
 - **Runtime:** [wazero](https://wazero.io), pure Go, so it keeps the single static binary and needs no KVM. Neither the laptop (macOS) nor the Oracle VM offers KVM for microVMs.
 - **Packaging:** a normal Lambda zip containing `bootstrap.wasm`, a WASI preview 1 command module. `Runtime` is `provided.al2023`, so the aws CLI and Terraform validation accept it unchanged.
 - **Invocation contract:**
-  - The event JSON arrives on stdin, and the response JSON goes to stdout.
-  - Logs go to stderr and are stored as CloudWatch-style log streams under `/aws/lambda/<name>` in `meta.db`.
-  - Environment variables come through WASI env.
-  - `Timeout` is enforced by context cancellation (`WithCloseOnContextDone`), and `MemorySize` by `WithMemoryLimitPages`.
-- **Performance:** compiled modules are cached on disk (`wazero.NewCompilationCacheWithDir`) and in memory under a size cap. Each invocation gets a fresh module instance at first. Pooling comes later.
+  - The event JSON arrives on stdin, and the response JSON goes to stdout. Exit 0 is success. A non-zero exit is an `Unhandled` function error: if stdout holds a JSON object with `errorMessage`, that is the error payload, otherwise Citadel reports `Runtime.ExitError`.
+  - Logs go to stderr and are stored as CloudWatch-style log streams under `/aws/lambda/<name>` in `meta.db`, framed by `START` / `END` / `REPORT` lines as in AWS. Streams are named `YYYY/MM/DD/[<version>]<environment id>`, one environment per process.
+  - Environment variables come through WASI env: the function's own, AWS's reserved ones (`AWS_REGION`, `AWS_LAMBDA_FUNCTION_NAME`, ...), and the Runtime API's per-invocation headers as variables, since WASI p1 has no sockets: `LAMBDA_RUNTIME_AWS_REQUEST_ID`, `LAMBDA_RUNTIME_INVOKED_FUNCTION_ARN`, `LAMBDA_RUNTIME_DEADLINE_MS`.
+  - `Timeout` is enforced by context cancellation (`WithCloseOnContextDone`). A module sleeping in a host call is woken by a context-aware `nanosleep`, so the timeout still ends it. `MemorySize` is enforced by `WithMemoryLimitPages` (one wazero runtime per memory size).
+  - Container-image functions (`PackageType: Image`) are stored but cannot run; invoking one is a `Runtime.InvalidEntrypoint` function error.
+- **Performance:** compiled modules are cached on disk (`wazero.NewCompilationCacheWithDir`) and in memory (an LRU of 16). CreateFunction and UpdateFunctionCode compile the package in the background, so the first invocation doesn't pay for it. Each invocation gets a fresh module instance. Pooling comes later.
+- **Asynchronous invocations** (`Event`, S3 notifications, destinations) are rows in `lambda_async`, run by a small worker pool. Function errors retry after 1 and 2 minutes (AWS's timing, bounded by `MaximumRetryAttempts` and `MaximumEventAgeInSeconds`), then go to the on-failure destination or the dead-letter queue.
 - **Languages:** Go (`GOOS=wasip1 GOARCH=wasm`), Rust (`wasm32-wasip1`), and TinyGo. Examples live in `examples/functions/`.
 - **Event sources:**
-  - SQS event source mappings, where a poller in the region invokes the function.
-  - S3 event notifications to Lambda or SQS, fed from the change log.
+  - SQS event source mappings, where a poller in the region invokes the function. Each enabled mapping has one goroutine that long-polls its queue through SQS's in-process API (`sqs.Handler.Call`), so a send wakes it at once. Handled messages are deleted; a failed batch stays in the queue until its visibility timeout ends. `ReportBatchItemFailures` and batching windows are supported. Other source types answer 501.
+  - S3 event notifications to Lambda or SQS, fed from the change log. A dispatcher reads `changes` from a cursor in `change_cursors`, matches object writes and deletes against the bucket's notification configuration, and delivers S3 event records (at least once). SNS and EventBridge destinations answer 501.
 - **Stretch:** a `citadel` host module so functions can call S3/DynamoDB without network sockets (WASI p1 has none).
 
 ---
@@ -243,10 +246,12 @@ internal/s3/        S3
 internal/ddb/       DynamoDB (expr/ subpackage for the expression language)
 internal/sqs/       SQS
 internal/iam/       IAM, STS, policy evaluation
-internal/lambda/    Lambda API + wazero runtime
+internal/lambda/    Lambda API + wazero runtime, event source mappings, async invocations
+internal/logs/      CloudWatch Logs (the slice that reading function logs needs)
 internal/dns/       authoritative DNS + Route 53 API
 internal/region/    region registry, control-plane follower, replication
 internal/canary/    probes, SLOs, status page
+examples/           example functions (examples/functions/) and, from M7, Terraform stacks; not part of the binary
 ```
 
 Keep this map flat: one package per service, with subpackages only when a piece (like the expression parser) has its own tests and no service dependencies.
