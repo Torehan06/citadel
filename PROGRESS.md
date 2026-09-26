@@ -132,3 +132,9 @@ Append-only. Newest entries at the bottom. Format in AGENTS.md.
 - Found: the ratchet once raised ddb to 801 with `test_tag.py::test_concurrent_tag`. It fails 4/4 in isolation because the test's own helper races: each thread computes its expected tags before the other thread's tag lands, then waits for a state that never arrives. Baseline raise for ddb not committed, so a lucky pass can't later read as a regression.
 - Concept: a FIFO queue guarantees order per message group by leasing a whole group at once. While any message of a group is being processed, no one else may receive that group's later messages, while other groups keep flowing in parallel.
 - Next: M4 exit check, then M5 (IAM and STS), which also unblocks the 7 GetCallerIdentity-dependent SQS tests.
+
+### 2026-09-26 06:17 · claude-opus-5.5 · M4 · M4 done: sqs 3 → 130
+- Did: verified the exit criterion and marked M4 [done]. Ratchet green (exit 1, no change) on a clean tree; make check passes; credential scan clean.
+- Conformance, per enabled suite (before this session → after; M4 start in brackets): s3 383 → 383 [383]; smoke-s3 12 → 12 [12]; ddb 800 → 800 [800]; sqs 84 → 130 [3]. Exit needs sqs ≥ 110. Earlier exits still hold: smoke-s3 12/12, s3 ≥ 300, ddb ≥ 450.
+- Concept: SQS gets its durability from leases rather than deletes. A receive hides a message for a visibility interval and only an explicit delete removes it, so a consumer that crashes just lets the lease lapse and the message goes to the next consumer, or to the dead-letter queue after too many tries.
+- Next: M5 (IAM and STS). GetCallerIdentity also unblocks 7 SQS tests.

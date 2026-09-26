@@ -51,7 +51,7 @@ Goal: tables, items, and the expression language.
 Conformance: add `ddb` to `conformance/suites` when you start this milestone.
 Exit: `ddb` ≥ 450 passing.
 
-## M4 — SQS
+## M4 — SQS [done]
 - [x] JSON 1.0 protocol plus query protocol fallback
 - [x] Standard queues: create, get URL, attributes, send / receive / delete (+ batch), visibility timeout, change visibility, delay, purge
 - [x] Long polling up to 20 s without busy loops; message attributes and MD5s exactly as AWS computes them
