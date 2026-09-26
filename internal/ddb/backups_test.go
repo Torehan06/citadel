@@ -29,3 +29,20 @@ func TestContinuousBackupsDescription(t *testing.T) {
 		}
 	}
 }
+
+func TestWarmThroughput(t *testing.T) {
+	cases := []struct {
+		p    *throughput
+		r, w int64
+	}{
+		{nil, 12000, 4000},
+		{&throughput{5, 5}, 12000, 4000},
+		{&throughput{20000, 1000}, 20000, 4000},
+	}
+	for _, c := range cases {
+		got := warmThroughput(c.p, "ACTIVE")
+		if got["ReadUnitsPerSecond"] != c.r || got["WriteUnitsPerSecond"] != c.w || got["Status"] != "ACTIVE" {
+			t.Errorf("warmThroughput(%v) = %v", c.p, got)
+		}
+	}
+}

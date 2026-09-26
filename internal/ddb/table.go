@@ -458,6 +458,7 @@ func (h *Handler) describe(c *call, t *table, status string) (map[string]any, er
 		d["BillingModeSummary"] = map[string]any{"BillingMode": "PAY_PER_REQUEST", "LastUpdateToPayPerRequestDateTime": created}
 	}
 	d["ProvisionedThroughput"] = pt
+	d["WarmThroughput"] = warmThroughput(t.desc.Provisioned, status)
 	if len(t.desc.GSIs) > 0 {
 		var gs []map[string]any
 		for _, g := range t.desc.GSIs {
@@ -503,8 +504,21 @@ func (h *Handler) describeIndex(c *call, t *table, ix indexDef, global bool) map
 			pt["ReadCapacityUnits"], pt["WriteCapacityUnits"] = ix.ProvisionedThroughput.ReadCapacityUnits, ix.ProvisionedThroughput.WriteCapacityUnits
 		}
 		d["ProvisionedThroughput"] = pt
+		d["WarmThroughput"] = warmThroughput(ix.ProvisionedThroughput, "ACTIVE")
 	}
 	return d
+}
+
+// warmThroughput is the throughput a table or GSI can serve instantly. New
+// tables start at 12,000 reads and 4,000 writes per second; provisioned
+// capacity above that raises it. Clients (the Terraform provider's create
+// waiter among them) poll its Status until it is ACTIVE.
+func warmThroughput(p *throughput, status string) map[string]any {
+	r, w := int64(12000), int64(4000)
+	if p != nil {
+		r, w = max(r, p.ReadCapacityUnits), max(w, p.WriteCapacityUnits)
+	}
+	return map[string]any{"ReadUnitsPerSecond": r, "WriteUnitsPerSecond": w, "Status": status}
 }
 
 type tableNameInput struct {
