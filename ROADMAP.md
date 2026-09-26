@@ -55,8 +55,8 @@ Exit: `ddb` ≥ 450 passing.
 - [x] JSON 1.0 protocol plus query protocol fallback
 - [x] Standard queues: create, get URL, attributes, send / receive / delete (+ batch), visibility timeout, change visibility, delay, purge
 - [x] Long polling up to 20 s without busy loops; message attributes and MD5s exactly as AWS computes them
-- [ ] Redrive policy / DLQ, message retention
-- [ ] FIFO: dedup (content-based and explicit), message groups, ordering
+- [x] Redrive policy / DLQ, message retention
+- [x] FIFO: dedup (content-based and explicit), message groups, ordering
 - [x] Queue URLs as `http://<host>/<account>/<name>`. moto's tests expect account 123456789012.
 Conformance: add `sqs` to `conformance/suites`.
 Exit: `sqs` ≥ 110 passing.
