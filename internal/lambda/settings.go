@@ -429,7 +429,9 @@ type eventInvokeConfig struct {
 	DestinationConfig        destinationConfig `json:"DestinationConfig"`
 }
 
-var destinationRE = regexp.MustCompile(`^$|^arn:(aws[a-zA-Z0-9-]*):([a-zA-Z0-9\-])+:([a-z]{2}(-gov)?-[a-z]+-\d{1})?:(\d{12})?:(.*)$`)
+// Region names are relaxed from AWS's pattern so Citadel's own regions
+// (tuchanka-1) are accepted.
+var destinationRE = regexp.MustCompile(`^$|^arn:(aws[a-zA-Z0-9-]*):([a-zA-Z0-9\-])+:([a-z]+(-[a-z]+)*-\d+)?:(\d{12})?:(.*)$`)
 
 func (h *Handler) eventInvokeConfig(c *call, raw string) error {
 	f, err := c.ref(raw)

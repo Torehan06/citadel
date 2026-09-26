@@ -17,6 +17,7 @@ func TestParseRef(t *testing.T) {
 		{in: "arn:aws:lambda:us-east-1:123456789012:function:fn:9", name: "fn", qualifier: "9", account: "123456789012", region: "us-east-1"},
 		{in: "arn:aws-cn:lambda:cn-northwest-1:123456789012:function:my_fn-2:prod", name: "my_fn-2", qualifier: "prod", account: "123456789012", region: "cn-northwest-1"},
 		{in: "arn:aws:lambda:us-gov-west-1:123456789012:function:fn", name: "fn", account: "123456789012", region: "us-gov-west-1"},
+		{in: "arn:aws:lambda:tuchanka-1:123456789012:function:fn:live", name: "fn", qualifier: "live", account: "123456789012", region: "tuchanka-1"},
 		{in: "", bad: true},
 		{in: "bad name", bad: true},
 		{in: "fn:a:b", bad: true},

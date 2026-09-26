@@ -35,7 +35,7 @@ const (
 // ---- names and ARNs ----------------------------------------------------------------
 
 var (
-	functionRefRE = regexp.MustCompile(`^(?:arn:(aws[a-zA-Z-]*):lambda:([a-z]{2}(?:-gov|-iso[a-z]?)?-[a-z]+-\d{1}):)?(?:(\d{12}):)?(?:function:)?([a-zA-Z0-9\-_]+)(?::(\$LATEST|[a-zA-Z0-9\-_]+))?$`)
+	functionRefRE = regexp.MustCompile(`^(?:arn:(aws[a-zA-Z-]*):lambda:([a-z]+(?:-[a-z]+)*-\d+):)?(?:(\d{12}):)?(?:function:)?([a-zA-Z0-9\-_]+)(?::(\$LATEST|[a-zA-Z0-9\-_]+))?$`)
 	nameRE        = regexp.MustCompile(`^[a-zA-Z0-9\-_]{1,64}$`)
 	aliasNameRE   = regexp.MustCompile(`^(?:[a-zA-Z0-9\-_]*[a-zA-Z\-_][a-zA-Z0-9\-_]*)$`)
 	roleRE        = regexp.MustCompile(`^arn:(aws[a-zA-Z-]*)?:iam::(\d{12}):role/?[a-zA-Z_0-9+=,.@\-_/]+$`)
