@@ -266,8 +266,20 @@ func (t *table) validateIndexKeys(it expr.Item) error {
 }
 
 // writeItem replaces the item at k (old → new; new nil deletes), keeping
-// every secondary index in step within the same transaction.
+// every secondary index in step within the same transaction. A write to a
+// global table is versioned and queued for the other replicas.
 func writeItem(ctx context.Context, tx *store.Tx, t *table, k itemKey, old, new expr.Item) error {
+	if err := writeItemRows(ctx, tx, t, k, old, new); err != nil {
+		return err
+	}
+	if t.global() {
+		return recordLocalWriteTx(ctx, tx, t, k, new == nil)
+	}
+	return nil
+}
+
+// writeItemRows writes the base row and index rows of one item.
+func writeItemRows(ctx context.Context, tx *store.Tx, t *table, k itemKey, old, new expr.Item) error {
 	bk := k.baseKey()
 	for _, ix := range t.indexes() {
 		if old != nil {

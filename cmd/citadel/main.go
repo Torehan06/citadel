@@ -181,10 +181,14 @@ func serve(args []string) error {
 	defer lambdaHandler.Close()
 	srv.Handle(api.SvcLambda, lambdaHandler)
 	if reg != nil {
-		replicator = region.NewReplicator(st, reg, *regionName, logger, s3Handler)
+		replicator = region.NewReplicator(st, reg, *regionName, logger, s3Handler, ddbHandler)
 		replicator.AntiEntropy = *antiEntropy
-		for path, h := range s3Handler.InternalHandlers() {
-			srv.HandleInternal(path, reg.Authenticate(h))
+		ddbHandler.Regions = reg.Names
+		ddbHandler.ReplicaReady = replicator.Repair
+		for _, hs := range []map[string]http.Handler{s3Handler.InternalHandlers(), ddbHandler.InternalHandlers()} {
+			for path, h := range hs {
+				srv.HandleInternal(path, reg.Authenticate(h))
+			}
 		}
 	}
 	srv.Handle(api.SvcLogs, lambdaHandler.Logs())

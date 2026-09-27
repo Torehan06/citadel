@@ -31,7 +31,7 @@ type updateTableInput struct {
 	StreamSpecification         *streamSpec                  `json:"StreamSpecification"`
 	DeletionProtectionEnabled   *bool                        `json:"DeletionProtectionEnabled"`
 	TableClass                  string                       `json:"TableClass"`
-	ReplicaUpdates              []interface{}                `json:"ReplicaUpdates"`
+	ReplicaUpdates              []replicaUpdate              `json:"ReplicaUpdates"`
 }
 
 func (h *Handler) updateTable(c *call) (any, error) {
@@ -43,11 +43,21 @@ func (h *Handler) updateTable(c *call) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	wasGlobal := t.global()
+	var replicas replicaSet
+	var converted bool
 	if in.ReplicaUpdates != nil {
-		return nil, errf(501, "NotImplemented", "citadel: global table replicas arrive with multi-region replication")
+		if replicas, converted, err = h.applyReplicaUpdates(t, in.ReplicaUpdates); err != nil {
+			return nil, err
+		}
+		if converted && t.desc.Stream == nil && in.StreamSpecification == nil {
+			// Global tables replicate through the table's stream, which
+			// DynamoDB turns on when the first replica is added.
+			t.desc.Stream = &streamSpec{StreamEnabled: true, StreamViewType: "NEW_AND_OLD_IMAGES"}
+		}
 	}
 	if in.BillingMode == "" && in.ProvisionedThroughput == nil && in.GlobalSecondaryIndexUpdates == nil &&
-		in.StreamSpecification == nil && in.DeletionProtectionEnabled == nil && in.TableClass == "" {
+		in.StreamSpecification == nil && in.DeletionProtectionEnabled == nil && in.TableClass == "" && in.ReplicaUpdates == nil {
 		return nil, validation("At least one of ProvisionedThroughput, BillingMode, UpdateStreamEnabled, GlobalSecondaryIndexUpdates or SSESpecification or ReplicaUpdates is required")
 	}
 	switch in.BillingMode {
@@ -116,7 +126,23 @@ func (h *Handler) updateTable(c *call) (any, error) {
 				return err
 			}
 		}
+		if converted {
+			if err := makeGlobalTx(c.ctx, tx, t); err != nil {
+				return err
+			}
+		}
+		if wasGlobal && !t.global() {
+			if _, err := tx.ExecContext(c.ctx, `DELETE FROM ddb_item_versions WHERE table_id = ?`, t.id); err != nil {
+				return err
+			}
+		}
+		if in.ReplicaUpdates != nil {
+			t.desc.ReplicaSetHLC = int64(tx.HLC())
+		}
 		if err := saveDesc(c, tx, t); err != nil {
+			return err
+		}
+		if err := syncReplicasTx(c.ctx, tx, t, replicas); err != nil {
 			return err
 		}
 		return tx.Change("dynamodb", "UpdateTable", t.desc.TableName, nil)

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -376,22 +375,30 @@ func (w *worker) status(head int64) map[string]any {
 }
 
 // lagWindow keeps the most recent replication lags (commit in the source
-// region to acknowledgement by the destination).
+// region to acknowledgement by the destination). The summary covers the whole
+// window and, separately, the last minute: after an outage the window is full
+// of catch-up samples, while the last minute shows the steady state.
 type lagWindow struct {
 	mu   sync.Mutex
-	buf  []time.Duration
+	buf  []lagSample
 	next int
 	full bool
 	max  time.Duration
+	now  func() time.Time
 }
 
-func newLagWindow(n int) *lagWindow { return &lagWindow{buf: make([]time.Duration, n)} }
+type lagSample struct {
+	at  time.Time
+	lag time.Duration
+}
+
+func newLagWindow(n int) *lagWindow { return &lagWindow{buf: make([]lagSample, n), now: time.Now} }
 
 func (l *lagWindow) add(d time.Duration) {
 	d = max(d, 0)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.buf[l.next] = d
+	l.buf[l.next] = lagSample{l.now(), d}
 	l.next++
 	if l.next == len(l.buf) {
 		l.next, l.full = 0, true
@@ -399,25 +406,38 @@ func (l *lagWindow) add(d time.Duration) {
 	l.max = max(l.max, d)
 }
 
-// summary reports lag percentiles in milliseconds over the window.
+// summary reports lag percentiles in milliseconds.
 func (l *lagWindow) summary() map[string]any {
 	l.mu.Lock()
 	n := l.next
 	if l.full {
 		n = len(l.buf)
 	}
-	s := slices.Clone(l.buf[:n])
+	all := make([]time.Duration, 0, n)
+	var recent []time.Duration
+	since := l.now().Add(-time.Minute)
+	for _, s := range l.buf[:n] {
+		all = append(all, s.lag)
+		if s.at.After(since) {
+			recent = append(recent, s.lag)
+		}
+	}
 	maxEver := l.max
 	l.mu.Unlock()
-	if n == 0 {
-		return map[string]any{"lag_samples": 0}
+	out := map[string]any{"lag_samples": len(all), "lag_samples_1m": len(recent)}
+	q := func(s []time.Duration, p float64) int64 {
+		return s[min(int(p*float64(len(s))), len(s)-1)].Milliseconds()
 	}
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
-	q := func(p float64) int64 { return s[min(int(p*float64(n)), n-1)].Milliseconds() }
-	return map[string]any{
-		"lag_samples": n, "lag_p50_ms": q(0.50), "lag_p99_ms": q(0.99),
-		"lag_window_max_ms": s[n-1].Milliseconds(), "lag_max_ms": maxEver.Milliseconds(),
+	if len(all) > 0 {
+		slices.Sort(all)
+		out["lag_p50_ms"], out["lag_p99_ms"] = q(all, 0.50), q(all, 0.99)
+		out["lag_window_max_ms"], out["lag_max_ms"] = all[len(all)-1].Milliseconds(), maxEver.Milliseconds()
 	}
+	if len(recent) > 0 {
+		slices.Sort(recent)
+		out["lag_p50_ms_1m"], out["lag_p99_ms_1m"] = q(recent, 0.50), q(recent, 0.99)
+	}
+	return out
 }
 
 // Authenticate wraps an internal handler so only other regions of this

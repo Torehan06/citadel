@@ -26,6 +26,11 @@ type Handler struct {
 	// IAM enforces identity policies for IAM users and role sessions; nil
 	// allows every authenticated caller everything in its account.
 	IAM *iam.Authorizer
+	// Regions lists the regions of this cloud (nil when standalone), for
+	// global table replicas; ReplicaReady is called when a new replica
+	// acknowledged its table, to start copying existing items.
+	Regions      func() []string
+	ReplicaReady func(region string)
 }
 
 func New(st *store.Store, v *sigv4.Verifier, region string, log *slog.Logger) *Handler {

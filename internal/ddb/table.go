@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"time"
 
@@ -74,6 +75,10 @@ type tableDesc struct {
 	TableClass           string      `json:"TableClass,omitempty"`
 	PITR                 *pitrState  `json:"PITR,omitempty"`
 	NextIndexID          int         `json:"NextIndexID"`
+	// Global tables: every region holding a replica (this one included)
+	// and the HLC of the change that last set that list.
+	Replicas      []replica `json:"Replicas,omitempty"`
+	ReplicaSetHLC int64     `json:"ReplicaSetHLC,omitempty"`
 }
 
 // table is a loaded table: its row id, account and description.
@@ -482,6 +487,7 @@ func (h *Handler) describe(c *call, t *table, status string) (map[string]any, er
 	if t.desc.TableClass != "" {
 		d["TableClassSummary"] = map[string]any{"TableClass": t.desc.TableClass}
 	}
+	h.describeReplicas(t, d)
 	return d, nil
 }
 
@@ -561,12 +567,30 @@ func (h *Handler) deleteTable(c *call) (any, error) {
 		if _, err := tx.ExecContext(c.ctx, `DELETE FROM ddb_items WHERE table_id = ?`, t.id); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(c.ctx, `DELETE FROM ddb_item_versions WHERE table_id = ?`, t.id); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(c.ctx, `DELETE FROM ddb_tables WHERE id = ?`, t.id)
 		if err != nil {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return notFound("Requested resource not found: Table: %s not found", in.TableName)
+		}
+		if t.global() {
+			// Deleting one replica of a global table: the others drop this
+			// region from their replica set.
+			var others []string
+			for _, r := range t.desc.Replicas {
+				if r.RegionName != h.region {
+					others = append(others, r.RegionName)
+				}
+			}
+			t.desc.Replicas = slices.DeleteFunc(t.desc.Replicas, func(r replica) bool { return r.RegionName == h.region })
+			t.desc.ReplicaSetHLC = int64(tx.HLC())
+			if err := syncReplicasTx(c.ctx, tx, t, replicaSet{Members: others, Targets: others}); err != nil {
+				return err
+			}
 		}
 		return tx.Change("dynamodb", "DeleteTable", in.TableName, map[string]any{"account": c.account})
 	})

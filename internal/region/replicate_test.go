@@ -43,8 +43,10 @@ func TestDigestOrderIndependentAndDiff(t *testing.T) {
 }
 
 func TestLagWindow(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
 	l := newLagWindow(100)
-	if s := l.summary(); s["lag_samples"] != 0 {
+	l.now = func() time.Time { return now }
+	if s := l.summary(); s["lag_samples"] != 0 || s["lag_p99_ms"] != nil {
 		t.Fatalf("empty window: %v", s)
 	}
 	for i := 1; i <= 250; i++ {
@@ -53,11 +55,16 @@ func TestLagWindow(t *testing.T) {
 	s := l.summary()
 	// The window holds the last 100 samples: 151..250 ms.
 	if s["lag_samples"] != 100 || s["lag_p50_ms"] != int64(201) || s["lag_p99_ms"] != int64(250) ||
-		s["lag_window_max_ms"] != int64(250) || s["lag_max_ms"] != int64(250) {
+		s["lag_window_max_ms"] != int64(250) || s["lag_max_ms"] != int64(250) || s["lag_samples_1m"] != 100 {
 		t.Fatalf("summary %v", s)
 	}
-	l.add(-time.Second) // clock skew never reports negative lag
-	if s := l.summary(); s["lag_samples"] != 100 {
-		t.Fatalf("summary after skewed sample %v", s)
+	// Two minutes later only the new samples count as recent.
+	now = now.Add(2 * time.Minute)
+	for i := 0; i < 10; i++ {
+		l.add(-time.Second) // clock skew never reports negative lag
+	}
+	s = l.summary()
+	if s["lag_samples"] != 100 || s["lag_samples_1m"] != 10 || s["lag_p99_ms_1m"] != int64(0) || s["lag_p99_ms"] != int64(250) {
+		t.Fatalf("summary after two minutes %v", s)
 	}
 }

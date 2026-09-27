@@ -101,6 +101,9 @@ type Tx struct {
 // HLC returns the timestamp stamped on every change in this transaction.
 func (tx *Tx) HLC() HLC { return tx.hlc }
 
+// Region returns the name of the region the transaction writes in.
+func (tx *Tx) Region() string { return tx.s.Region }
+
 // Change appends a row to the change log. payload is marshalled as JSON.
 func (tx *Tx) Change(service, kind, resource string, payload any) error {
 	var body []byte

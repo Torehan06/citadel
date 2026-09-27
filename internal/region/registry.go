@@ -102,6 +102,15 @@ func (r *Registry) Get(name string) (Region, bool) {
 	return Region{}, false
 }
 
+// Names returns the names of every region.
+func (r *Registry) Names() []string {
+	out := make([]string, len(r.Regions))
+	for i, g := range r.Regions {
+		out[i] = g.Name
+	}
+	return out
+}
+
 // HomeRegion returns the home region's entry.
 func (r *Registry) HomeRegion() Region {
 	g, _ := r.Get(r.Home)
