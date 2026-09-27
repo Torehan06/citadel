@@ -87,12 +87,12 @@ Goal: a real Terraform stack applies cleanly against one region.
 - [x] `harness/smoke.sh` gains a `terraform` set (human adds the harness side; request it in PROGRESS.md)
 Exit: `init`, `apply`, `plan -detailed-exitcode` (exit 0), and `destroy` pass twice in a row from fresh state.
 
-## M8 — Local multi-region
+## M8 — Local multi-region [done]
 Goal: three regions on one machine, with the global control plane replicated.
-- [ ] Region registry config; three local processes on different ports and data dirs (script under `examples/multiregion-local/`)
-- [ ] Control-plane change feed from the home region; followers apply in order and survive restarts
-- [ ] Static stability: stop the home region (SIGSTOP) and followers keep serving data-plane requests with existing credentials
-- [ ] Integration tests in Go that start real processes
+- [x] Region registry config; three local processes on different ports and data dirs (script under `examples/multiregion-local/`)
+- [x] Control-plane change feed from the home region; followers apply in order and survive restarts
+- [x] Static stability: stop the home region (SIGSTOP) and followers keep serving data-plane requests with existing credentials
+- [x] Integration tests in Go that start real processes
 Exit: a key created in the home region authenticates in both followers within 5 s; data-plane requests succeed in followers while the home region is stopped.
 
 ## M9 — Replication
