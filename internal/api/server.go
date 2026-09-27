@@ -23,24 +23,31 @@ type Config struct {
 	// Never set it on a real region.
 	Conformance bool
 	Logger      *slog.Logger
+	// Health, when set, adds fields to /_citadel/healthz (the region's role
+	// and control-plane position).
+	Health func() map[string]any
 }
 
 type Server struct {
 	cfg      Config
 	started  time.Time
 	handlers map[string]http.Handler
+	internal map[string]http.Handler
 }
 
 func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{cfg: cfg, started: time.Now(), handlers: map[string]http.Handler{}}
+	return &Server{cfg: cfg, started: time.Now(), handlers: map[string]http.Handler{}, internal: map[string]http.Handler{}}
 }
 
 // Handle registers the handler for one AWS service (use the Svc* constants).
 // Services without a handler answer NotImplemented in their own wire format.
 func (s *Server) Handle(svc string, h http.Handler) { s.handlers[svc] = h }
+
+// HandleInternal serves an endpoint under /_citadel/ (region-to-region APIs).
+func (s *Server) HandleInternal(path string, h http.Handler) { s.internal[path] = h }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqID := newRequestID()
@@ -51,7 +58,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Internal endpoints live under /_citadel/, which is not a valid S3 bucket
 	// name (underscore), so they can never collide with a bucket.
 	if strings.HasPrefix(r.URL.Path, "/_citadel/") {
-		s.internal(w, r)
+		s.serveInternal(w, r)
 		return
 	}
 	if s.cfg.Conformance && strings.HasPrefix(r.URL.Path, "/moto-api/") {
@@ -72,16 +79,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"status", rec.status, "ms", time.Since(start).Milliseconds(), "req_id", reqID)
 }
 
-func (s *Server) internal(w http.ResponseWriter, r *http.Request) {
+func (s *Server) serveInternal(w http.ResponseWriter, r *http.Request) {
+	if h, ok := s.internal[r.URL.Path]; ok {
+		h.ServeHTTP(w, r)
+		return
+	}
 	switch r.URL.Path {
 	case "/_citadel/healthz":
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		health := map[string]any{
 			"status":  "ok",
 			"region":  s.cfg.Region,
 			"version": s.cfg.Version,
 			"uptime":  time.Since(s.started).Round(time.Second).String(),
-		})
+		}
+		if s.cfg.Health != nil {
+			for k, v := range s.cfg.Health() {
+				health[k] = v
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(health)
 	default:
 		http.NotFound(w, r)
 	}
