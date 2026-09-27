@@ -10,7 +10,8 @@
 # fresh directory (fresh state), builds the Lambda package, then runs init,
 # apply, plan -detailed-exitcode (must exit 0: no changes), a check that the
 # deployed function answers, and destroy - twice in a row, as M7's exit asks.
-# Needs terraform >= 1.6 on PATH, go (wasip1 build) and python3 (zipping).
+# Needs terraform >= 1.6 (on PATH or in .harness/bin), go (wasip1 build) and
+# python3 (zipping). The provider binary alone is ~800 MB; keep 1 GB free.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 EP="${CITADEL_ENDPOINT:-http://127.0.0.1:8420}"
@@ -20,6 +21,8 @@ export AWS_PAGER=""
 export TF_IN_AUTOMATION=1 TF_INPUT=0 CHECKPOINT_DISABLE=1
 # Providers are downloaded once and reused across runs.
 export TF_PLUGIN_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$ROOT/.harness/terraform-plugins}"
+# A repo-local build (.harness/bin/terraform) is used when none is installed.
+command -v terraform >/dev/null || PATH="$ROOT/.harness/bin:$PATH"
 mkdir -p "$TF_PLUGIN_CACHE_DIR"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
