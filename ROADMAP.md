@@ -79,12 +79,12 @@ Exit: `iam` ≥ 150 passing; no `s3` or `ddb` regressions from enforcement.
 Conformance: add `lambda` to `conformance/suites`.
 Exit: `lambda` ≥ 45 passing (the Docker-based invoke tests stay red, which is expected); the hello-go smoke passes; an SQS message triggers the function within 2 s.
 
-## M7 — Terraform believes it
+## M7 — Terraform believes it [done]
 Goal: a real Terraform stack applies cleanly against one region.
 - [x] `examples/terraform/single-region/`: `hashicorp/aws` provider with `endpoints {}`, `skip_credentials_validation`, `skip_requesting_account_id`, `skip_metadata_api_check`, `skip_region_validation`, `s3_use_path_style`
-- [ ] Resources: S3 bucket (+ versioning, policy, lifecycle), DynamoDB table (+ GSI), SQS queue (+ DLQ), IAM role + policy, Lambda function + SQS event source mapping
-- [ ] Implement every read the provider performs until `terraform plan` after `apply` shows **no changes**
-- [ ] `harness/smoke.sh` gains a `terraform` set (human adds the harness side; request it in PROGRESS.md)
+- [x] Resources: S3 bucket (+ versioning, policy, lifecycle), DynamoDB table (+ GSI), SQS queue (+ DLQ), IAM role + policy, Lambda function + SQS event source mapping
+- [x] Implement every read the provider performs until `terraform plan` after `apply` shows **no changes**
+- [x] `harness/smoke.sh` gains a `terraform` set (human adds the harness side; request it in PROGRESS.md)
 Exit: `init`, `apply`, `plan -detailed-exitcode` (exit 0), and `destroy` pass twice in a row from fresh state.
 
 ## M8 — Local multi-region
