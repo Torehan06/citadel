@@ -40,6 +40,7 @@ type cloud struct {
 	regPath string
 	key     string
 	regions map[string]*proc
+	extra   []string // more serve flags
 }
 
 func freePort(t *testing.T) string {
@@ -52,7 +53,7 @@ func freePort(t *testing.T) string {
 	return l.Addr().String()
 }
 
-func newCloud(t *testing.T) *cloud {
+func newCloud(t *testing.T, extra ...string) *cloud {
 	if testing.Short() {
 		t.Skip("starts real processes")
 	}
@@ -61,7 +62,7 @@ func newCloud(t *testing.T) *cloud {
 	if out, err := exec.Command("go", "build", "-o", bin, "citadel/cmd/citadel").CombinedOutput(); err != nil {
 		t.Fatalf("build citadel: %v\n%s", err, out)
 	}
-	c := &cloud{t: t, bin: bin, key: "integration-test-region-key-0123456789", regions: map[string]*proc{}}
+	c := &cloud{t: t, bin: bin, key: "integration-test-region-key-0123456789", regions: map[string]*proc{}, extra: extra}
 	reg := region.Registry{Home: "home-1"}
 	for _, n := range []string{"home-1", "follow-1", "follow-2"} {
 		p := &proc{name: n, addr: freePort(t), dir: filepath.Join(dir, n)}
@@ -99,8 +100,9 @@ func (c *cloud) start(name string) {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	p.cmd = exec.Command(c.bin, "serve", "--region", name, "--listen", p.addr, "--data", p.dir,
-		"--bootstrap", bootstrapPath, "--regions", c.regPath, "--log", "text", "--gc-interval", "0")
+	args := append([]string{"serve", "--region", name, "--listen", p.addr, "--data", p.dir,
+		"--bootstrap", bootstrapPath, "--regions", c.regPath, "--log", "text", "--gc-interval", "0"}, c.extra...)
+	p.cmd = exec.Command(c.bin, args...)
 	p.cmd.Env = append(os.Environ(), region.KeyEnv+"="+c.key)
 	p.cmd.Stdout, p.cmd.Stderr = logf, logf
 	if err := p.cmd.Start(); err != nil {
