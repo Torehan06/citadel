@@ -144,7 +144,7 @@ func serve(args []string) error {
 	case follower != nil:
 		srv.Handle(api.SvcIAM, &region.Forwarder{
 			Registry: reg, Local: iamHandler, HomeUp: follower.HomeUp, Logger: logger,
-			Client: &http.Client{Timeout: 10 * time.Second},
+			Client: &http.Client{Timeout: 5 * time.Second},
 		})
 	case reg != nil:
 		srv.HandleInternal(region.ControlPath, region.FeedHandler(st, reg, *regionName, logger))
