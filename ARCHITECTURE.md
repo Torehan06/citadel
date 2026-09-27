@@ -145,6 +145,13 @@ Global state covers accounts, users, keys, roles, policies, the region registry,
 - If the home region is down, followers keep authenticating with their replica. That's static stability. Control-plane writes (for example `CreateUser`) fail with `ServiceUnavailable` until it returns.
 - This mirrors AWS itself: IAM's control plane lives in `us-east-1` and its data plane is replicated to every region. Route 53's control plane is also in `us-east-1`.
 
+**How it's built (M8).**
+- The region registry is a JSON file (`citadel serve --regions`, example in `examples/multiregion-local/regions.json`) that names the regions, their endpoints and the home region. The shared region key comes from `CITADEL_REGION_KEY` or a `key_file`, never from the registry itself.
+- Capture: SQLite triggers on `accounts`, `access_keys` and `iam_entities` append a row image to `control_log` in the same transaction as the change (migration 0013). Every writer is covered, including bootstrap seeding. Access-key usage (`last_used`) is regional and not logged.
+- Apply: a follower applies each page of entries and advances its cursor (`feed_cursors`) in one transaction, so a restart resumes exactly where it stopped. A `control_meta` epoch detects a recreated home database; the follower then replays from seq 0.
+- IAM calls that reach a follower are forwarded to the home region unchanged, Host header included, so the caller's SigV4 signature still verifies there. While the home region is unreachable, `Get*`/`List*` calls are answered from the replica and writes fail with 503 `ServiceUnavailable`. STS stays regional: each region issues session credentials from its own replica.
+- `/_citadel/healthz` on a follower reports `home_reachable`, `control_seq` and `control_head`.
+
 **Why not Raft?** Two of our three nodes are unreliable: the laptop sleeps and the Codespace dies. A 3-node quorum over them would be unavailable more often than one stable leader. Raft stays a stretch goal once there are three always-on machines.
 
 ---
