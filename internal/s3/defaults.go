@@ -46,9 +46,6 @@ func (h *Handler) defaultBucketConfig(req *request, sub string) (ok bool, err er
 	case "website":
 		e = entry{get: "s3:GetBucketWebsite", del: "s3:DeleteBucketWebsite",
 			missing: &Error{Status: 404, Code: "NoSuchWebsiteConfiguration", Message: "The specified bucket does not have a website configuration"}}
-	case "replication":
-		e = entry{get: "s3:GetReplicationConfiguration", del: "s3:PutReplicationConfiguration",
-			missing: &Error{Status: 404, Code: "ReplicationConfigurationNotFoundError", Message: "The replication configuration was not found"}}
 	case "object-lock":
 		e = entry{get: "s3:GetBucketObjectLockConfiguration",
 			missing: &Error{Status: 404, Code: "ObjectLockConfigurationNotFoundError", Message: "Object Lock configuration does not exist for this bucket"}}

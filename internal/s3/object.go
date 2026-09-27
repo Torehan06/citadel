@@ -55,6 +55,8 @@ type objectRow struct {
 	Meta         objectMeta
 	ACL          *acl
 	Tags         []tag
+	ReplStatus   string // x-amz-replication-status ("" when not replicated)
+	ReplSource   string // on a replica: the source "region/bucket"
 }
 
 // loadObject returns the current version of req.key, or the given version.
@@ -63,7 +65,7 @@ type objectRow struct {
 // x-amz-delete-marker set.
 func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error) {
 	const cols = `SELECT o.key, o.version_id, o.delete_marker, o.size, o.etag, o.blob, o.parts_json, o.last_modified, o.owner,
-		o.meta_json, o.acl, o.tagging, COALESCE(a.canonical_id, o.owner)
+		o.meta_json, o.acl, o.tagging, COALESCE(a.canonical_id, o.owner), o.repl_status, o.repl_source
 		FROM s3_objects o LEFT JOIN accounts a ON a.id = o.owner`
 	q := cols + ` WHERE o.bucket = ? AND o.key = ? AND o.is_latest = 1`
 	args := []any{req.bucket, req.key}
@@ -76,7 +78,7 @@ func (h *Handler) loadObject(req *request, versionID string) (*objectRow, error)
 	var marker int
 	var meta, parts, aclJSON, tagJSON, ownerCanonical string
 	err := h.st.DB().QueryRowContext(req.ctx, q, args...).
-		Scan(&o.Key, &o.VersionID, &marker, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta, &aclJSON, &tagJSON, &ownerCanonical)
+		Scan(&o.Key, &o.VersionID, &marker, &o.Size, &o.ETag, &o.Blob, &parts, &lm, &o.Owner, &meta, &aclJSON, &tagJSON, &ownerCanonical, &o.ReplStatus, &o.ReplSource)
 	if errors.Is(err, sql.ErrNoRows) {
 		if versionID != "" {
 			return nil, errNoSuchVersion(req.bucket, req.key)
@@ -423,6 +425,9 @@ func (h *Handler) getObject(req *request, head bool) error {
 	}
 	if vid != "" || b.Versioning != "" {
 		hdr.Set("x-amz-version-id", o.VersionID)
+	}
+	if o.ReplStatus != "" {
+		hdr.Set("x-amz-replication-status", o.ReplStatus)
 	}
 	if strings.EqualFold(r.Header.Get("X-Amz-Checksum-Mode"), "ENABLED") && o.Meta.ChecksumAlgo != "" {
 		ct := o.Meta.ChecksumType

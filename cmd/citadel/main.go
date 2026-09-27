@@ -69,6 +69,7 @@ func serve(args []string) error {
 	gcInterval := fs.Duration("gc-interval", 10*time.Minute, "how often to sweep unreferenced blobs (0 disables)")
 	gcGrace := fs.Duration("gc-grace", time.Hour, "minimum age of an unreferenced blob before it is deleted")
 	regionsPath := fs.String("regions", "", "region registry file (JSON); omit to run a standalone region")
+	antiEntropy := fs.Duration("anti-entropy", time.Minute, "how often replicated buckets and tables are compared with each other region (0 disables)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -115,9 +116,10 @@ func serve(args []string) error {
 	}}
 
 	var (
-		reg      *region.Registry
-		follower *region.Follower
-		health   func() map[string]any
+		reg        *region.Registry
+		follower   *region.Follower
+		replicator *region.Replicator
+		health     func() map[string]any
 	)
 	if *regionsPath != "" {
 		if reg, err = region.Load(*regionsPath); err != nil {
@@ -131,6 +133,14 @@ func serve(args []string) error {
 		} else {
 			follower = region.NewFollower(st, reg, *regionName, logger)
 			health = follower.Status
+		}
+		control := health
+		health = func() map[string]any {
+			h := control()
+			if replicator != nil {
+				h["replication"] = replicator.Status(context.Background())
+			}
+			return h
 		}
 	}
 
@@ -170,6 +180,13 @@ func serve(args []string) error {
 	s3Handler.Notify = lambdaHandler.NotificationTargets()
 	defer lambdaHandler.Close()
 	srv.Handle(api.SvcLambda, lambdaHandler)
+	if reg != nil {
+		replicator = region.NewReplicator(st, reg, *regionName, logger, s3Handler)
+		replicator.AntiEntropy = *antiEntropy
+		for path, h := range s3Handler.InternalHandlers() {
+			srv.HandleInternal(path, reg.Authenticate(h))
+		}
+	}
 	srv.Handle(api.SvcLogs, lambdaHandler.Logs())
 	lambdaHandler.StartAsync()
 	if err := lambdaHandler.StartPollers(context.Background()); err != nil {
@@ -189,6 +206,9 @@ func serve(args []string) error {
 	}
 	if follower != nil {
 		go follower.Run(ctx)
+	}
+	if replicator != nil {
+		go replicator.Run(ctx)
 	}
 	if *gcInterval > 0 {
 		st.StartSweeper(ctx, *gcInterval, *gcGrace, logger)

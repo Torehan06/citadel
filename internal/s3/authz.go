@@ -56,6 +56,7 @@ type bucketInfo struct {
 	Lifecycle        string
 	LifecycleMinSize string
 	Notification     string
+	Replication      string
 }
 
 func (h *Handler) loadBucket(ctx context.Context, name string) (*bucketInfo, error) {
@@ -64,10 +65,10 @@ func (h *Handler) loadBucket(ctx context.Context, name string) (*bucketInfo, err
 	var aclJSON, pab string
 	err := h.st.DB().QueryRowContext(ctx, `
 		SELECT b.name, b.account_id, a.canonical_id, b.region, b.location_constraint, b.created, b.versioning,
-			b.acl, b.policy, b.ownership, b.public_access_block, b.tagging, b.cors, b.lifecycle, b.notification, b.lifecycle_min_size
+			b.acl, b.policy, b.ownership, b.public_access_block, b.tagging, b.cors, b.lifecycle, b.notification, b.lifecycle_min_size, b.replication
 		FROM s3_buckets b JOIN accounts a ON a.id = b.account_id WHERE b.name = ?`, name).
 		Scan(&b.Name, &b.Account, &b.OwnerCanonical, &b.Region, &b.Location, &created, &b.Versioning,
-			&aclJSON, &b.PolicyRaw, &b.Ownership, &pab, &b.Tagging, &b.CORS, &b.Lifecycle, &b.Notification, &b.LifecycleMinSize)
+			&aclJSON, &b.PolicyRaw, &b.Ownership, &pab, &b.Tagging, &b.CORS, &b.Lifecycle, &b.Notification, &b.LifecycleMinSize, &b.Replication)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNoSuchBucket(name)
 	}

@@ -86,6 +86,10 @@ func (h *Handler) putBucketVersioning(req *request) error {
 	if cfg.Status != versioningEnabled && cfg.Status != versioningSuspended {
 		return errMalformedXML()
 	}
+	if b, err := h.loadBucket(req.ctx, req.bucket); err == nil && b.Replication != "" && cfg.Status != versioningEnabled {
+		return &Error{Status: 409, Code: "InvalidBucketState", Bucket: req.bucket,
+			Message: "A replication configuration is present on this bucket, so you cannot change the versioning state. To change the versioning state, first delete the replication configuration."}
+	}
 	err = h.st.Update(req.ctx, func(tx *store.Tx) error {
 		if _, err := tx.ExecContext(req.ctx, `UPDATE s3_buckets SET versioning = ?, hlc = ? WHERE name = ?`,
 			cfg.Status, int64(tx.HLC()), req.bucket); err != nil {
@@ -136,14 +140,15 @@ func insertVersionTx(req *request, tx *store.Tx, o objectRow, deleteMarker bool)
 		aclJSON = o.ACL.json()
 	}
 	_, err := tx.ExecContext(req.ctx, `
-		INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json, acl, tagging, hlc)
-		VALUES (?, ?, ?, `+nextSeq+`, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO s3_objects(bucket, key, version_id, seq, is_latest, delete_marker, size, etag, blob, parts_json, last_modified, owner, meta_json, acl, tagging, hlc, repl_status, repl_source)
+		VALUES (?, ?, ?, `+nextSeq+`, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(bucket, key, version_id) DO UPDATE SET
 			seq=excluded.seq, is_latest=1, delete_marker=excluded.delete_marker, size=excluded.size, etag=excluded.etag,
 			blob=excluded.blob, parts_json=excluded.parts_json, last_modified=excluded.last_modified, owner=excluded.owner,
-			meta_json=excluded.meta_json, acl=excluded.acl, tagging=excluded.tagging, hlc=excluded.hlc`,
+			meta_json=excluded.meta_json, acl=excluded.acl, tagging=excluded.tagging, hlc=excluded.hlc,
+			repl_status=excluded.repl_status, repl_source=excluded.repl_source`,
 		req.bucket, o.Key, o.VersionID, int64(tx.HLC()), req.bucket, o.Key, boolInt(deleteMarker), o.Size, o.ETag, o.Blob,
-		partsJSON, tx.HLC().WallMs(), owner, string(metaJSON), aclJSON, tagsJSON(o.Tags), int64(tx.HLC()))
+		partsJSON, tx.HLC().WallMs(), owner, string(metaJSON), aclJSON, tagsJSON(o.Tags), int64(tx.HLC()), o.ReplStatus, o.ReplSource)
 	return err
 }
 
@@ -168,6 +173,9 @@ func writeObjectTx(req *request, tx *store.Tx, o objectRow) (string, error) {
 	o.VersionID = nullVersion
 	if state == versioningEnabled {
 		o.VersionID = newVersionID()
+		if o.ReplStatus, err = replicationPendingTx(req, tx, o.Key, o.Tags, false); err != nil {
+			return "", err
+		}
 	}
 	if err := insertVersionTx(req, tx, o, false); err != nil {
 		return "", err
@@ -246,6 +254,11 @@ func deleteObjectTx(req *request, tx *store.Tx, key, versionID string) (deleteOu
 		vid = newVersionID()
 	}
 	m := objectRow{Key: key, VersionID: vid, Meta: objectMeta{}}
+	if state == versioningEnabled {
+		if m.ReplStatus, err = replicationPendingTx(req, tx, key, nil, true); err != nil {
+			return deleteOutcome{}, err
+		}
+	}
 	if err := insertVersionTx(req, tx, m, true); err != nil {
 		return deleteOutcome{}, err
 	}

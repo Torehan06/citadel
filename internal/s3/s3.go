@@ -26,6 +26,8 @@ type Handler struct {
 	// Notify delivers bucket event notifications to SQS and Lambda; nil
 	// rejects notification configurations with destinations.
 	Notify NotifyTargets
+
+	repl replState
 }
 
 func New(st *store.Store, v *sigv4.Verifier, region string, log *slog.Logger) *Handler {
@@ -183,6 +185,12 @@ func (h *Handler) bucketOp(req *request, sub string) error {
 		return h.getBucketNotification(req)
 	case sub == "notification" && m == http.MethodPut:
 		return h.putBucketNotification(req)
+	case sub == "replication" && m == http.MethodGet:
+		return h.getBucketReplication(req)
+	case sub == "replication" && m == http.MethodPut:
+		return h.putBucketReplication(req)
+	case sub == "replication" && m == http.MethodDelete:
+		return h.deleteBucketReplication(req)
 	case sub == "lifecycle" && m == http.MethodGet:
 		return h.getBucketLifecycle(req)
 	case sub == "lifecycle" && m == http.MethodPut:
