@@ -1,0 +1,8 @@
+{
+  "home": "palaven-1",
+  "regions": [
+    {"name": "palaven-1",  "endpoint": "http://127.0.0.1:8441"},
+    {"name": "tuchanka-1", "endpoint": "http://127.0.0.1:8440"},
+    {"name": "thessia-1",  "endpoint": "http://127.0.0.1:8442"}
+  ]
+}
