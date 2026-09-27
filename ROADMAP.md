@@ -96,9 +96,9 @@ Goal: three regions on one machine, with the global control plane replicated.
 Exit: a key created in the home region authenticates in both followers within 5 s; data-plane requests succeed in followers while the home region is stopped.
 
 ## M9 — Replication
-- [ ] S3 cross-region replication (PutBucketReplication / GetBucketReplication), versioning required, delete markers replicated
-- [ ] DynamoDB global tables (UpdateTable ReplicaUpdates), LWW on (hlc, region)
-- [ ] Per-destination cursors with retry/backoff; anti-entropy Merkle digests; replication lag metric
+- [x] S3 cross-region replication (PutBucketReplication / GetBucketReplication), versioning required, delete markers replicated
+- [x] DynamoDB global tables (UpdateTable ReplicaUpdates), LWW on (hlc, region)
+- [x] Per-destination cursors with retry/backoff; anti-entropy Merkle digests; replication lag metric
 - [ ] Terraform example `examples/terraform/multi-region/` with provider aliases; clean plan after apply
 Exit: in the local 3-region setup, writes converge after a region is stopped for 10 minutes and resumed; p99 replication lag < 5 s locally.
 
