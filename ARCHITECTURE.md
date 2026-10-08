@@ -168,6 +168,15 @@ Global state covers accounts, users, keys, roles, policies, the region registry,
 - **Anti-entropy.** Periodically compare per-bucket (per-table) Merkle digests over key ranges, then repair differences. This covers the laptop region waking up after a week asleep.
 - **Promised to clients:** read-after-write within a region, eventual consistency across regions, and replication lag as a measured SLO (§9).
 
+**How it's built (M9).**
+- *Stream.* `internal/region/replicate.go` runs one worker per other region. Each tails `changes` from its own cursor (`feed_cursors` row `repl:<region>`, created at the log's head) and hands batches of 256 to the services (`Shipper`s). The cursor moves only after every service shipped the batch; failures back off from 100 ms to 5 s. Applies are idempotent, so a retried batch changes nothing it already changed.
+- *S3.* A version a rule selects is written `PENDING`. The shipper re-reads the version, asks the destination region whether it holds the destination bucket (cached), and posts the version's metadata to `/_citadel/repl/s3/versions`. The destination answers with the content-addressed blobs it lacks, which go to `/_citadel/repl/blob`, then applies: same version ID, the source's HLC-based `seq`, `repl_status = REPLICA`, `repl_source = region/bucket`. The latest version is the highest `seq`, wherever it was written. The source then marks the version `COMPLETED` (or `FAILED` if the bucket is gone or unversioned).
+- *DynamoDB.* `writeItem` versions every write to a global table in `ddb_item_versions` (HLC, origin region, tombstone) and logs an `ItemVersion` change. The shipper sends the item's current state; the destination applies it only if its version is newer (LWW on `(hlc, region)`) and advances its own clock past it. The replica set travels as a `ReplicaSync` change ordered by `ReplicaSetHLC`, carrying the full member list: new members create the table, dropped members delete it, a set of one makes the table regional.
+- *Anti-entropy.* Every `--anti-entropy` (default 1 m), and right after a replica is added, each region compares 256-leaf digests with each peer: leaf = first byte of sha256(entry id), leaf digest = XOR of sha256(id, version). Only differing leaves exchange entry lists. DynamoDB pushes items whose version is newer here; S3 pushes versions the destination lacks (S3 never deletes replicas when a source version is deleted).
+- *Lag.* Each worker keeps the last 2048 commit-to-ack lags; `/_citadel/healthz` reports p50/p99/max over that window and over the last minute, plus cursor, backlog and health per destination.
+- *Routing.* A request signed (SigV4 scope) for another region of the registry is proxied there unchanged, Host header included. This is how the Terraform provider's per-replica clients, which reuse the owning provider's endpoint, reach the replica's region.
+- *Not yet:* a global S3 bucket namespace, same-region replication, propagating GSI/billing changes of a global table, tombstone GC, and body-covering signatures on region-to-region pushes.
+
 ---
 
 ## 9. Compute: Lambda on WebAssembly (decision D3)
