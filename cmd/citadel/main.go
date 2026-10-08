@@ -197,9 +197,13 @@ func serve(args []string) error {
 		return fmt.Errorf("start event source mappings: %w", err)
 	}
 
+	var front http.Handler = srv
+	if reg != nil {
+		front = region.NewRouter(reg, *regionName, srv, logger)
+	}
 	httpSrv := &http.Server{
 		Addr:              *listen,
-		Handler:           srv,
+		Handler:           front,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

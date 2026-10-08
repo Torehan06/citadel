@@ -178,7 +178,12 @@ func (h *Handler) serve(r *http.Request) (any, error) {
 	if err := h.authorize(c, name); err != nil {
 		return nil, err
 	}
-	return op(h, c)
+	for attempt := 1; ; attempt++ {
+		out, err := op(h, c)
+		if !errors.Is(err, errStaleDesc) || attempt == 5 {
+			return out, err
+		}
+	}
 }
 
 // decode unmarshals the request body into dst, turning JSON problems into

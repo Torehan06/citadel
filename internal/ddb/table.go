@@ -87,6 +87,7 @@ type table struct {
 	account string
 	created time.Time
 	desc    tableDesc
+	hlc     int64 // of the last description change; saveDesc checks it
 }
 
 func (t *table) hashKey() string { return t.desc.KeySchema[0].AttributeName }
@@ -137,8 +138,8 @@ func (h *Handler) loadTable(c *call, name string) (*table, error) {
 	var created int64
 	var desc string
 	err := h.st.DB().QueryRowContext(c.ctx,
-		`SELECT id, account_id, created, desc_json FROM ddb_tables WHERE account_id = ? AND name = ?`, c.account, name).
-		Scan(&t.id, &t.account, &created, &desc)
+		`SELECT id, account_id, created, desc_json, hlc FROM ddb_tables WHERE account_id = ? AND name = ?`, c.account, name).
+		Scan(&t.id, &t.account, &created, &desc, &t.hlc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound("Requested resource not found: Table: %s not found", name)
 	}
@@ -643,11 +644,25 @@ func (h *Handler) listTables(c *call) (any, error) {
 	return out, rows.Err()
 }
 
-// saveDesc writes a table's description back.
+// errStaleDesc means a table's description changed between reading it and
+// writing it back; the operation is run again on the new description.
+var errStaleDesc = errors.New("table description changed concurrently")
+
+// saveDesc writes a table's description back if nobody changed it since t
+// was loaded (compare-and-swap on hlc), so concurrent UpdateTable calls
+// can't undo each other's changes.
 func saveDesc(c *call, tx *store.Tx, t *table) error {
 	raw, _ := json.Marshal(t.desc)
-	_, err := tx.ExecContext(c.ctx, `UPDATE ddb_tables SET desc_json = ?, hlc = ? WHERE id = ?`, string(raw), int64(tx.HLC()), t.id)
-	return err
+	res, err := tx.ExecContext(c.ctx, `UPDATE ddb_tables SET desc_json = ?, hlc = ? WHERE id = ? AND hlc = ?`,
+		string(raw), int64(tx.HLC()), t.id, t.hlc)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errStaleDesc
+	}
+	t.hlc = int64(tx.HLC())
+	return nil
 }
 
 // checkKeyNameLengths rejects key attribute names over 255 characters before

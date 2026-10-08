@@ -1,6 +1,7 @@
 package region
 
 import (
+	"net/http"
 	"testing"
 	"time"
 )
@@ -66,5 +67,25 @@ func TestLagWindow(t *testing.T) {
 	s = l.summary()
 	if s["lag_samples"] != 100 || s["lag_samples_1m"] != 10 || s["lag_p99_ms_1m"] != int64(0) || s["lag_p99_ms"] != int64(250) {
 		t.Fatalf("summary after two minutes %v", s)
+	}
+}
+
+func TestSignedRegion(t *testing.T) {
+	cases := []struct{ auth, query, want string }{
+		{"AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20261009/thessia-1/dynamodb/aws4_request, SignedHeaders=host, Signature=ab", "", "thessia-1"},
+		{"AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20261009/us-east-1/s3/aws4_request,SignedHeaders=host,Signature=ab", "", "us-east-1"},
+		{"", "X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20261009%2Fpalaven-1%2Fs3%2Faws4_request", "palaven-1"},
+		{"AWS AKIAIOSFODNN7EXAMPLE:sig", "", ""},
+		{"AWS4-HMAC-SHA256 Credential=broken", "", ""},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		r, _ := http.NewRequest("GET", "http://x/b?"+c.query, nil)
+		if c.auth != "" {
+			r.Header.Set("Authorization", c.auth)
+		}
+		if got := SignedRegion(r); got != c.want {
+			t.Errorf("auth %q query %q: got %q, want %q", c.auth, c.query, got, c.want)
+		}
 	}
 }

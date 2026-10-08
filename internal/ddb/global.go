@@ -230,8 +230,8 @@ func (h *Handler) tableByName(ctx context.Context, q queryer, account, name stri
 	var t table
 	var created int64
 	var desc string
-	err := q.QueryRowContext(ctx, `SELECT id, account_id, created, desc_json FROM ddb_tables WHERE account_id = ? AND name = ?`,
-		account, name).Scan(&t.id, &t.account, &created, &desc)
+	err := q.QueryRowContext(ctx, `SELECT id, account_id, created, desc_json, hlc FROM ddb_tables WHERE account_id = ? AND name = ?`,
+		account, name).Scan(&t.id, &t.account, &created, &desc, &t.hlc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -438,7 +438,7 @@ func (h *Handler) markReplica(ctx context.Context, account, name, regionName str
 		}
 		t.desc.Replicas[i].Status = status
 		raw, _ := json.Marshal(t.desc)
-		_, err = tx.ExecContext(ctx, `UPDATE ddb_tables SET desc_json = ? WHERE id = ?`, string(raw), t.id)
+		_, err = tx.ExecContext(ctx, `UPDATE ddb_tables SET desc_json = ?, hlc = ? WHERE id = ?`, string(raw), int64(tx.HLC()), t.id)
 		return err
 	})
 }
@@ -529,7 +529,7 @@ func (h *Handler) applyReplicaSet(ctx context.Context, in replicaSync) error {
 		}
 		t.desc.Replicas, t.desc.ReplicaSetHLC = desc.Replicas, desc.ReplicaSetHLC
 		raw, _ := json.Marshal(t.desc)
-		_, err = tx.ExecContext(ctx, `UPDATE ddb_tables SET desc_json = ? WHERE id = ?`, string(raw), t.id)
+		_, err = tx.ExecContext(ctx, `UPDATE ddb_tables SET desc_json = ?, hlc = ? WHERE id = ?`, string(raw), int64(tx.HLC()), t.id)
 		return err
 	})
 }
