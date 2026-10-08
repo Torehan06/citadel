@@ -95,7 +95,7 @@ Goal: three regions on one machine, with the global control plane replicated.
 - [x] Integration tests in Go that start real processes
 Exit: a key created in the home region authenticates in both followers within 5 s; data-plane requests succeed in followers while the home region is stopped.
 
-## M9 — Replication
+## M9 — Replication [done]
 - [x] S3 cross-region replication (PutBucketReplication / GetBucketReplication), versioning required, delete markers replicated
 - [x] DynamoDB global tables (UpdateTable ReplicaUpdates), LWW on (hlc, region)
 - [x] Per-destination cursors with retry/backoff; anti-entropy Merkle digests; replication lag metric
